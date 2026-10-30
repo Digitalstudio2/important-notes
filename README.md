@@ -165,9 +165,8 @@ psql "$env:SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/verify_hardening.sql
 - **Site URL:** رابط الموقع المنشور:
   `https://digitalstudio2.github.io/important-notes/`
 - **Redirect URLs:**
-  - `https://digitalstudio2.github.io/important-notes/**`
-  - `http://localhost:8765/**` (للتطوير المحلي)
-  - `http://localhost:8000/**` (للتطوير المحلي)
+  - `https://digitalstudio2.github.io/important-notes/**` (المضاف حالياً)
+  - للتطوير المحلي، أضف عند الحاجة: `http://localhost:8765/**` و`http://localhost:8000/**`
 
 **استعادة كلمة المرور**
 
