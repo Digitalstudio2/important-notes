@@ -1,5 +1,5 @@
 /* ==========================================================================
-   ملاحظات هامة — Supabase public configuration
+   مساحة التدوين — Supabase public configuration
    --------------------------------------------------------------------------
    This file contains ONLY the publishable (public) key. It is designed to be
    shipped in the browser. Never put the secret/service key here.

@@ -1,4 +1,4 @@
-# ملاحظات هامة — Important Notes
+# مساحة التدوين — Writing Space
 
 تطبيق ملاحظات عربي أنيق بواجهة RTL كاملة، مبني بـ HTML وCSS وJavaScript، ويعتمد على **Supabase** للمصادقة وقاعدة البيانات.
 

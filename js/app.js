@@ -1,5 +1,5 @@
 /* ==========================================================================
-   ملاحظات هامة — Application logic
+   مساحة التدوين — Application logic
    ========================================================================== */
 (function () {
   'use strict';
@@ -520,7 +520,7 @@
       showAlert(els.registerAlert, state.blockedMessage);
     }
 
-    document.title = isRegister ? 'إنشاء حساب — ملاحظات هامة' : 'ملاحظات هامة — مساحتك الشخصية';
+    document.title = isRegister ? 'إنشاء حساب — مساحة التدوين' : 'مساحة التدوين — مساحتك الشخصية';
   }
 
   /* ---------- Elements & static UI ---------- */
@@ -697,7 +697,7 @@
     updateStrength(els.passwordStrength, '');
     setAuthMode('login');
     applyTheme(storedThemeMode(), { global: false, user: false });
-    document.title = 'ملاحظات هامة — مساحتك الشخصية';
+    document.title = 'مساحة التدوين — مساحتك الشخصية';
 
     if (window.innerWidth > 1024) {
       setTimeout(function () {
@@ -740,7 +740,7 @@
     els.todayLabel.textContent = formatToday();
     renderAll({ animate: true });
 
-    document.title = 'ملاحظاتي — ملاحظات هامة';
+    document.title = 'ملاحظاتي — مساحة التدوين';
     window.scrollTo(0, 0);
 
     if (options.toast) {
@@ -931,7 +931,7 @@
     var searching = state.query.trim().length > 0;
     els.notesTitle.textContent = searching ? 'نتائج البحث' : baseTitle;
     els.notesCount.textContent = formatNumber(list.length);
-    document.title = (searching ? 'نتائج البحث' : baseTitle) + ' — ملاحظات هامة';
+    document.title = (searching ? 'نتائج البحث' : baseTitle) + ' — مساحة التدوين';
 
     els.notesGrid.classList.toggle('is-list', state.layout === 'list');
     els.notesGrid.classList.remove('is-animated');

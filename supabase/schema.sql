@@ -1,5 +1,5 @@
 -- ============================================================================
---  ملاحظات هامة — Supabase schema + Row Level Security
+--  مساحة التدوين — Supabase schema + Row Level Security
 --  نفّذ هذا الملف كاملاً من: Supabase Dashboard → SQL Editor → New query
 --  المشروع: https://kcfboyrrsltbtomiishj.supabase.co
 -- ============================================================================

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   ملاحظات هامة — Supabase data layer
+   مساحة التدوين — Supabase data layer
    --------------------------------------------------------------------------
    - Auth: Supabase Auth (email + password, optional anonymous demo user).
    - Data: public.profiles + public.notes protected by Row Level Security.
