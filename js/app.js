@@ -320,7 +320,7 @@
 
     if (options.user && state.user) {
       state.prefs.theme = mode;
-      try { window.HNStore.savePrefs(state.user.id, state.prefs); } catch (error) {}
+      window.HNStore.savePrefs(state.prefs).catch(function () {});
     }
 
     syncThemeControls();
@@ -706,11 +706,19 @@
     }
   }
 
-  function enterApp(user, options) {
+  async function enterApp(user, options) {
     options = options || {};
     state.user = user;
-    state.notes = window.HNStore.getNotes(user.id);
-    state.prefs = window.HNStore.getPrefs(user.id);
+    state.prefs = user.prefs || { theme: 'system', layout: 'grid', sort: 'updated-desc' };
+
+    var notes = [];
+    try {
+      notes = await window.HNStore.getNotes();
+    } catch (error) {
+      toast(window.HNStore.errorMessage(error), { type: 'error', duration: 7000 });
+    }
+
+    state.notes = notes;
     state.filter = { type: 'all', category: null };
     state.query = '';
     state.sort = state.prefs.sort;
@@ -1004,17 +1012,17 @@
 
   function renderStorage() {
     if (!state.user) return;
-    var bytes = window.HNStore.getUsage(state.user.id);
+    var bytes = window.HNStore.getUsage(state.notes);
     var percentage = Math.min(100, (bytes / STORAGE_LIMIT) * 100);
     var percentageLabel = percentage > 0 && percentage < 1 ? '<1%' : Math.round(percentage) + '%';
 
     els.storagePercent.textContent = percentageLabel;
-    els.storageText.textContent = window.HNStore.formatBytes(bytes) + ' من 5 م.ب';
+    els.storageText.textContent = window.HNStore.formatBytes(bytes) + ' محفوظة في حسابك';
     els.storageBar.style.width = Math.max(percentage, bytes > 0 ? 2 : 0).toFixed(1) + '%';
     els.storageCard.classList.toggle('is-high', percentage >= 80);
 
     if (els.settingsStorageText) {
-      els.settingsStorageText.textContent = window.HNStore.formatBytes(bytes) + ' من 5 م.ب';
+      els.settingsStorageText.textContent = window.HNStore.formatBytes(bytes) + ' محفوظة في حسابك';
       els.settingsStorageBar.style.width = Math.max(percentage, bytes > 0 ? 2 : 0).toFixed(1) + '%';
     }
   }
@@ -1024,7 +1032,7 @@
     if (!state.user) return;
     state.prefs.layout = state.layout;
     state.prefs.sort = state.sort;
-    try { window.HNStore.savePrefs(state.user.id, state.prefs); } catch (error) {}
+    window.HNStore.savePrefs(state.prefs).catch(function () {});
   }
 
   function setFilter(type, category) {
@@ -1061,21 +1069,27 @@
     renderNotesSection();
   }
 
-  function commitNotes(nextNotes, options) {
+  async function commitNotes(nextNotes, options) {
     options = options || {};
     if (!state.user) return false;
-    try {
-      window.HNStore.saveNotes(state.user.id, nextNotes);
-    } catch (error) {
-      toast('تعذّر حفظ التغييرات. قد تكون مساحة التخزين ممتلئة.', { type: 'error', duration: 6000 });
-      return false;
-    }
+
+    var previous = state.notes;
     state.notes = nextNotes;
     if (options.render !== false) renderAll();
+
+    try {
+      await window.HNStore.saveNotes(previous, nextNotes);
+    } catch (error) {
+      state.notes = previous;
+      if (options.render !== false) renderAll();
+      toast(window.HNStore.errorMessage(error), { type: 'error', duration: 6000 });
+      return false;
+    }
+
     return true;
   }
 
-  function toggleNoteFlag(noteId, field) {
+  async function toggleNoteFlag(noteId, field) {
     var note = getNote(noteId);
     if (!note) return;
 
@@ -1087,7 +1101,7 @@
     });
 
     closeNoteMenu();
-    if (!commitNotes(next)) return;
+    if (!(await commitNotes(next))) return;
 
     var message;
     if (field === 'pinned') message = note.pinned ? 'تم إلغاء تثبيت الملاحظة' : 'تم تثبيت الملاحظة في الأعلى';
@@ -1095,7 +1109,7 @@
     toast(message, { type: 'success', duration: 2400 });
   }
 
-  function duplicateNote(noteId) {
+  async function duplicateNote(noteId) {
     var note = getNote(noteId);
     if (!note) return;
 
@@ -1109,26 +1123,26 @@
     });
 
     closeNoteMenu();
-    if (!commitNotes([copy].concat(state.notes))) return;
+    if (!(await commitNotes([copy].concat(state.notes)))) return;
     toast('تم إنشاء نسخة من الملاحظة', { type: 'success', duration: 2800 });
   }
 
-  function deleteNote(noteId) {
+  async function deleteNote(noteId) {
     var note = getNote(noteId);
     if (!note) return;
 
     closeNoteMenu();
     var next = state.notes.filter(function (item) { return item.id !== noteId; });
-    if (!commitNotes(next)) return;
+    if (!(await commitNotes(next))) return;
 
     toast('تم حذف الملاحظة', {
       type: 'info',
       duration: 7000,
       action: {
         label: 'تراجع',
-        onClick: function () {
+        onClick: async function () {
           if (getNote(note.id)) return;
-          if (commitNotes([note].concat(state.notes))) {
+          if (await commitNotes([note].concat(state.notes))) {
             toast('تمت استعادة الملاحظة', { type: 'success', duration: 2400 });
           }
         }
@@ -1295,7 +1309,7 @@
     if (saveLabel) saveLabel.textContent = note ? 'حفظ التغييرات' : 'حفظ الملاحظة';
     els.editorMeta.textContent = note
       ? 'آخر تحديث ' + timeAgo(note.updatedAt)
-      : 'ستُحفظ الملاحظة على جهازك';
+      : 'ستُحفظ الملاحظة في حسابك';
 
     updateEditorWordCount();
     state.editorSnapshot = editorSnapshot();
@@ -1319,7 +1333,7 @@
     closeOverlay(els.editorOverlay);
   }
 
-  function saveCurrentNote() {
+  async function saveCurrentNote() {
     if (state.savingNote || !state.user) return;
 
     var title = els.noteTitle.value.trim();
@@ -1331,6 +1345,7 @@
     clearFieldError(els.noteTitle);
 
     state.savingNote = true;
+    setFormLoading(els.saveNoteBtn, true);
     try {
       var wasNew = !state.editingId;
       var now = Date.now();
@@ -1361,7 +1376,7 @@
         });
       }
 
-      if (!commitNotes(next, { render: false })) return;
+      if (!(await commitNotes(next, { render: false }))) return;
 
       if (wasNew) {
         state.filter = { type: 'all', category: null };
@@ -1378,6 +1393,7 @@
       });
     } finally {
       state.savingNote = false;
+      setFormLoading(els.saveNoteBtn, false);
     }
   }
 
@@ -1513,7 +1529,7 @@
     closeOverlay(els.settingsOverlay);
   }
 
-  function saveAccountProfile(event) {
+  async function saveAccountProfile(event) {
     event.preventDefault();
     if (!state.user) return;
 
@@ -1525,8 +1541,9 @@
       return;
     }
 
+    setFormLoading(els.saveAccountBtn, true);
     try {
-      var updated = window.HNStore.updateProfile(state.user.id, {
+      var updated = await window.HNStore.updateProfile({
         name: name,
         avatarColor: state.selectedAvatar
       });
@@ -1539,13 +1556,19 @@
       toast('تم تحديث معلومات الحساب', { type: 'success', duration: 2800 });
     } catch (error) {
       if (error && error.code === 'invalid-name') showFieldError(els.accountName, error.message);
-      else toast(error && error.message ? error.message : 'تعذّر حفظ التغييرات.', { type: 'error' });
+      else toast(window.HNStore.errorMessage(error), { type: 'error' });
+    } finally {
+      setFormLoading(els.saveAccountBtn, false);
     }
   }
 
   async function changePassword(event) {
     event.preventDefault();
     if (!state.user) return;
+    if (state.user.isDemo) {
+      toast('هذا حساب تجريبي مشترك، ولا يمكن تغيير كلمة مروره.', { type: 'info', duration: 4200 });
+      return;
+    }
 
     clearFieldError(els.currentPassword);
     clearFieldError(els.newPassword);
@@ -1582,7 +1605,7 @@
 
     setFormLoading(els.updatePasswordBtn, true);
     try {
-      await window.HNStore.changePassword(state.user.id, current, nextPassword);
+      await window.HNStore.changePassword(current, nextPassword);
       els.passwordForm.reset();
       updateStrength(els.newPasswordStrength, '');
       resetPasswordToggles(els.passwordForm);
@@ -1595,7 +1618,7 @@
         showFieldError(els.newPassword, error.message);
         els.newPassword.focus();
       } else {
-        toast(error && error.message ? error.message : 'تعذّر تحديث كلمة المرور.', { type: 'error' });
+        toast(window.HNStore.errorMessage(error), { type: 'error' });
       }
     } finally {
       setFormLoading(els.updatePasswordBtn, false);
@@ -1646,7 +1669,7 @@
       var text = await readFileText(file);
       var imported = window.HNStore.parseImport(text);
       var next = imported.concat(state.notes);
-      if (!commitNotes(next)) return;
+      if (!(await commitNotes(next))) return;
       renderStorage();
       toast('تم استيراد ' + notesPhraseObject(imported.length) + ' بنجاح', {
         type: 'success',
@@ -1671,18 +1694,18 @@
       title: 'حذف جميع الملاحظات؟',
       message: 'سيتم حذف ' + notesPhraseObject(previous.length) + ' من حسابك. يمكنك التراجع خلال ثوانٍ بعد الحذف.',
       confirmLabel: 'حذف الكل',
-      onConfirm: function () {
-        if (!commitNotes([])) return;
+      onConfirm: async function () {
+        if (!(await commitNotes([]))) return;
         renderStorage();
         toast('تم حذف جميع الملاحظات', {
           type: 'info',
           duration: 7000,
           action: {
             label: 'تراجع',
-            onClick: function () {
+            onClick: async function () {
               var existingIds = new Set(state.notes.map(function (note) { return note.id; }));
               var restored = previous.filter(function (note) { return !existingIds.has(note.id); }).concat(state.notes);
-              if (commitNotes(restored)) {
+              if (await commitNotes(restored)) {
                 toast('تمت استعادة الملاحظات', { type: 'success', duration: 2600 });
               }
             }
@@ -1694,28 +1717,32 @@
 
   function deleteAccount() {
     if (!state.user) return;
+    if (state.user.isDemo) {
+      toast('هذا حساب تجريبي مشترك، ولا يمكن حذفه.', { type: 'info', duration: 4200 });
+      return;
+    }
     openConfirm({
       title: 'حذف الحساب نهائياً؟',
-      message: 'سيتم حذف حسابك وجميع ملاحظاتك من هذا المتصفح نهائياً. لا يمكن التراجع عن هذا الإجراء.',
+      message: 'سيتم حذف حسابك وجميع ملاحظاتك من قاعدة البيانات نهائياً. لا يمكن التراجع عن هذا الإجراء.',
       confirmLabel: 'حذف الحساب',
       requireText: 'حذف',
-      onConfirm: function () {
+      onConfirm: async function () {
         try {
-          window.HNStore.deleteAccount(state.user.id);
+          await window.HNStore.deleteAccount();
           closeAllOverlays();
           closeSidebar(true);
           showAuth();
           toast('تم حذف الحساب وكل بياناته', { type: 'success', duration: 5000 });
         } catch (error) {
-          toast('تعذّر حذف الحساب. حاول مرة أخرى.', { type: 'error' });
+          toast(window.HNStore.errorMessage(error), { type: 'error' });
         }
       }
     });
   }
 
-  function handleLogout() {
+  async function handleLogout() {
     var email = state.user ? state.user.email : '';
-    window.HNStore.clearSession();
+    await window.HNStore.signOut();
     closeAllOverlays();
     closeNoteMenu();
     closeSidebar(true);
@@ -1754,24 +1781,15 @@
 
     setFormLoading(els.loginSubmit, true);
     try {
-      var user = await window.HNStore.authenticate(email, password);
-      if (!user) {
-        showAlert(els.loginAlert, 'البريد الإلكتروني أو كلمة المرور غير صحيحة.');
-        shake(els.loginForm);
-        els.loginPassword.focus();
-        els.loginPassword.select();
-        return;
-      }
-
-      window.HNStore.startSession(user.id, els.rememberMe.checked);
+      var user = await window.HNStore.signIn(email, password, els.rememberMe.checked);
       els.loginForm.reset();
       els.rememberMe.checked = true;
-      enterApp(user, {
+      await enterApp(user, {
         animate: true,
         toast: 'مرحباً بعودتك، ' + firstName(user.name)
       });
     } catch (error) {
-      showAlert(els.loginAlert, error && error.message ? error.message : 'تعذّر تسجيل الدخول. حاول مرة أخرى.');
+      showAlert(els.loginAlert, window.HNStore.errorMessage(error));
       shake(els.loginForm);
     } finally {
       setFormLoading(els.loginSubmit, false);
@@ -1820,43 +1838,45 @@
 
     setFormLoading(els.registerSubmit, true);
     try {
-      var user = await window.HNStore.createUser({
+      var result = await window.HNStore.signUp({
         name: name,
         email: email,
-        password: password
+        password: password,
+        prefs: {
+          theme: document.documentElement.getAttribute('data-theme-mode') || 'system',
+          layout: 'grid',
+          sort: 'updated-desc'
+        }
       });
 
-      var prefs = {
-        theme: document.documentElement.getAttribute('data-theme-mode') || 'system',
-        layout: 'grid',
-        sort: 'updated-desc'
-      };
-
-      try {
-        window.HNStore.saveNotes(user.id, [window.HNStore.makeWelcomeNote(user.name)]);
-        window.HNStore.savePrefs(user.id, prefs);
-      } catch (storageError) {}
-
-      window.HNStore.startSession(user.id, true);
       els.registerForm.reset();
       updateStrength(els.passwordStrength, '');
-      enterApp(user, {
+
+      if (result.needsConfirmation) {
+        setAuthMode('login');
+        els.loginEmail.value = email;
+        showAlert(els.loginAlert, 'تم إنشاء حسابك بنجاح. تحقق من بريدك الإلكتروني لتأكيد الحساب، ثم سجّل الدخول.');
+        els.loginPassword.focus();
+        return;
+      }
+
+      await enterApp(result.user, {
         animate: true,
-        toast: 'مرحباً ' + firstName(user.name) + '، تم إنشاء حسابك بنجاح'
+        toast: 'مرحباً ' + firstName(result.user.name) + '، تم إنشاء حسابك بنجاح'
       });
     } catch (error) {
       if (error && error.code === 'email-exists') {
         showFieldError(els.registerEmail, error.message);
         els.registerEmail.focus();
-      } else if (error && error.code === 'email-reserved') {
-        showFieldError(els.registerEmail, error.message);
-        els.registerEmail.focus();
+      } else if (error && error.code === 'weak-password') {
+        showFieldError(els.registerPassword, error.message);
+        els.registerPassword.focus();
       } else if (error && error.code === 'invalid-email') {
         showFieldError(els.registerEmail, error.message);
       } else if (error && error.code === 'invalid-name') {
         showFieldError(els.registerName, error.message);
       } else {
-        showAlert(els.registerAlert, error && error.message ? error.message : 'تعذّر إنشاء الحساب. حاول مرة أخرى.');
+        showAlert(els.registerAlert, window.HNStore.errorMessage(error));
       }
       shake(els.registerForm);
     } finally {
@@ -1873,14 +1893,13 @@
     setFormLoading(els.demoBtn, true);
 
     try {
-      var user = await window.HNStore.ensureDemo();
-      window.HNStore.startSession(user.id, true);
-      enterApp(user, {
+      var user = await window.HNStore.signInDemo();
+      await enterApp(user, {
         animate: true,
         toast: 'مرحباً بك في الحساب التجريبي'
       });
     } catch (error) {
-      showAlert(els.loginAlert, error && error.message ? error.message : 'تعذّر فتح الحساب التجريبي.');
+      showAlert(els.loginAlert, window.HNStore.errorMessage(error));
     } finally {
       setFormLoading(els.demoBtn, false);
     }
@@ -2265,33 +2284,40 @@
   }
 
   /* ---------- Boot ---------- */
-  function init() {
+  async function init() {
     cacheElements();
     buildStaticOptions();
     bindEvents();
     syncThemeControls();
 
-    var sessionUser = null;
-    try { sessionUser = window.HNStore.restoreSession(); } catch (error) {}
-
-    if (sessionUser) enterApp(sessionUser, { animate: true });
-    else showAuth();
-
     var problems = [];
-    if (!window.HNHash.isSupported()) {
-      problems.push('متصفحك لا يدعم التشفير الآمن المطلوب. يرجى استخدام متصفح حديث مثل Chrome أو Edge أو Firefox.');
+    var configured = window.HNStore && typeof window.HNStore.isConfigured === 'function' && window.HNStore.isConfigured();
+    if (!configured) {
+      problems.push('تعذّر تحميل إعدادات Supabase. تحقق من اتصالك بالإنترنت ثم أعد تحميل الصفحة.');
     }
-    if (!window.HNStore.isStorageAvailable()) {
-      problems.push('تعذّر الوصول إلى التخزين المحلي. تأكد من السماح بالتخزين وعدم استخدام وضع التصفح الخاص.');
+
+    var sessionUser = null;
+    if (configured) {
+      try {
+        sessionUser = await window.HNStore.restoreSession();
+      } catch (error) {
+        problems.push(window.HNStore.errorMessage(error));
+      }
     }
+
+    if (sessionUser) await enterApp(sessionUser, { animate: true });
+    else showAuth();
 
     if (problems.length) {
       state.blockedMessage = problems.join(' ');
-      els.loginSubmit.disabled = true;
-      els.registerSubmit.disabled = true;
-      els.demoBtn.disabled = true;
       showAlert(els.loginAlert, state.blockedMessage);
       showAlert(els.registerAlert, state.blockedMessage);
+
+      if (!configured) {
+        els.loginSubmit.disabled = true;
+        els.registerSubmit.disabled = true;
+        els.demoBtn.disabled = true;
+      }
     }
 
     requestAnimationFrame(function () {

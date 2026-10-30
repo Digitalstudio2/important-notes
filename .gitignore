@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+# Secrets — never commit these files
+# ---------------------------------------------------------------------------
+.env
+.env.*
+supabase.inf
+supabase*.inf
+*.secret
+*.secret.*
+service-role*
+
+# The public Supabase client config (js/supabase-config.js) is intentionally
+# tracked: it contains ONLY the publishable key and is safe to ship.
+
+# ---------------------------------------------------------------------------
+# OS / editor noise
+# ---------------------------------------------------------------------------
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/

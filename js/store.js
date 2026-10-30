@@ -1,17 +1,18 @@
 /* ==========================================================================
-   ملاحظات هامة — Local data layer (localStorage)
+   ملاحظات هامة — Supabase data layer
+   --------------------------------------------------------------------------
+   - Auth: Supabase Auth (email + password, optional anonymous demo user).
+   - Data: public.profiles + public.notes protected by Row Level Security.
+   - The browser only ever receives the publishable key.
    ========================================================================== */
 (function () {
   'use strict';
 
-  var USERS_KEY = 'hn.users.v1';
-  var SESSION_KEY = 'hn.session.v1';
-  var NOTES_PREFIX = 'hn.notes.v1.';
-  var PREFS_PREFIX = 'hn.prefs.v1.';
-  var THEME_KEY = 'hn.theme.v1';
+  var SUPABASE_URL = window.HN_SUPABASE_URL;
+  var SUPABASE_KEY = window.HN_SUPABASE_PUBLISHABLE_KEY;
 
-  var SESSION_DAYS = 30;
-  var SESSION_HOURS = 12;
+  var AUTH_STORAGE_KEY = 'hn.auth.session.v1';
+  var REMEMBER_KEY = 'hn.remember.v1';
 
   var CATEGORIES = [
     { id: 'work', name: 'عمل', color: '#6366f1' },
@@ -24,275 +25,713 @@
 
   var NOTE_COLORS = ['default', 'sand', 'mint', 'sky', 'rose', 'violet'];
   var AVATAR_COLORS = ['emerald', 'indigo', 'rose', 'amber', 'sky', 'violet'];
+  var THEMES = ['light', 'dark', 'system'];
+  var LAYOUTS = ['grid', 'list'];
+  var SORTS = ['updated-desc', 'updated-asc', 'created-desc', 'title-asc'];
+
   var DEMO = {
     email: 'demo@notes.app',
     password: 'Demo@1234',
     name: 'سارة العتيبي'
   };
 
+  var client = null;
+  var currentUser = null;
+  var notesQueue = Promise.resolve();
+  var prefsQueue = Promise.resolve();
+
+  /* ---------- Errors ---------- */
   function makeError(code, message) {
     var error = new Error(message);
     error.code = code;
     return error;
   }
 
-  function isStorageAvailable() {
+  function logError(scope, error) {
+    if (window.console && typeof window.console.error === 'function') {
+      window.console.error('[Supabase ' + scope + ']', error);
+    }
+  }
+
+  function dbError(error) {
+    logError('db', error);
+    var message = String((error && (error.message || error.details || error.hint)) || '');
+    var code = String((error && error.code) || '');
+
+    if (code === 'PGRST205' || code === 'PGRST202' || /schema cache|does not exist|could not find the table|could not find the .*function/i.test(message)) {
+      return makeError('schema-missing', 'لم يتم إعداد جداول قاعدة البيانات بعد. نفّذ ملف supabase/schema.sql في لوحة Supabase ثم حاول مرة أخرى.');
+    }
+    if (code === '42501' || /row-level security|permission denied/i.test(message)) {
+      return makeError('permission', 'ليس لديك صلاحية للوصول إلى هذه البيانات.');
+    }
+    if (/failed to fetch|networkerror|load failed|fetch failed|network request failed/i.test(message)) {
+      return makeError('network', 'تعذّر الاتصال بالخادم. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.');
+    }
+    if (code === '23505' || /duplicate key/i.test(message)) {
+      return makeError('duplicate', 'هذا العنصر محفوظ مسبقاً.');
+    }
+    if (code === '23514' || /violates check constraint/i.test(message)) {
+      return makeError('invalid-data', 'بعض قيم الملاحظة غير صالحة. حدّث الصفحة وحاول مرة أخرى.');
+    }
+    return makeError('db', 'تعذّر إتمام العملية على قاعدة البيانات. حاول مرة أخرى.');
+  }
+
+  function authError(error) {
+    logError('auth', error);
+    var message = String((error && (error.message || error.error_description)) || '');
+    var code = String((error && error.code) || '');
+
+    if (code === 'invalid_credentials' || /invalid login credentials/i.test(message)) {
+      return makeError('invalid-credentials', 'البريد الإلكتروني أو كلمة المرور غير صحيحة.');
+    }
+    if (code === 'email_not_confirmed' || /email not confirmed/i.test(message)) {
+      return makeError('email-not-confirmed', 'يرجى تأكيد بريدك الإلكتروني أولاً. تحقق من صندوق الوارد ثم سجّل الدخول.');
+    }
+    if (code === 'user_already_exists' || /user already registered|already been registered/i.test(message)) {
+      return makeError('email-exists', 'هذا البريد الإلكتروني مسجّل مسبقاً. سجّل الدخول بدلاً من ذلك.');
+    }
+    if (code === 'weak_password' || /password should be at least/i.test(message)) {
+      return makeError('weak-password', 'كلمة المرور قصيرة جداً. استخدم 8 أحرف على الأقل.');
+    }
+    if (code === 'email_address_invalid' || code === 'invalid_email' || /invalid email|email address .*invalid/i.test(message)) {
+      return makeError('invalid-email', 'البريد الإلكتروني غير صالح.');
+    }
+    if (code === 'signup_disabled' || /signups not allowed/i.test(message)) {
+      return makeError('signup-disabled', 'إنشاء الحسابات الجديدة غير مفعّل حالياً.');
+    }
+    if (code === 'over_email_send_rate_limit' || /email rate limit|for security purposes/i.test(message)) {
+      return makeError('rate-limit', 'تم إرسال عدد كبير من الرسائل. انتظر قليلاً ثم حاول مرة أخرى.');
+    }
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
+      return makeError('network', 'تعذّر الاتصال بخادم المصادقة. تحقق من اتصالك بالإنترنت.');
+    }
+    return makeError('auth', 'تعذّر إتمام عملية المصادقة. حاول مرة أخرى.');
+  }
+
+  function errorMessage(error) {
+    if (error && typeof error.message === 'string' && error.message) return error.message;
+    return 'تعذّر إتمام العملية. حاول مرة أخرى.';
+  }
+
+  function assertNotDemo(action) {
+    if (currentUser && currentUser.isDemo) {
+      throw makeError('demo-restricted', 'هذا حساب تجريبي مشترك، ولا يمكن ' + action + '.');
+    }
+  }
+
+  /* ---------- Auth storage (remember me) ---------- */
+  function getRemember() {
     try {
-      var key = '__hn_storage_test__';
-      localStorage.setItem(key, '1');
-      localStorage.removeItem(key);
+      return localStorage.getItem(REMEMBER_KEY) !== '0';
+    } catch (error) {
       return true;
-    } catch (error) {
-      return false;
     }
   }
 
-  function readJSON(key, fallback) {
+  function setRemember(remember) {
     try {
-      var raw = localStorage.getItem(key);
-      if (!raw) return fallback;
-      var value = JSON.parse(raw);
-      return value === undefined || value === null ? fallback : value;
+      localStorage.setItem(REMEMBER_KEY, remember ? '1' : '0');
+    } catch (error) {}
+  }
+
+  function clearAuthStorage() {
+    try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch (error) {}
+    try { sessionStorage.removeItem(AUTH_STORAGE_KEY); } catch (error) {}
+  }
+
+  var authStorage = {
+    getItem: function (key) {
+      try {
+        var local = localStorage.getItem(key);
+        if (local !== null) return local;
+      } catch (error) {}
+      try {
+        return sessionStorage.getItem(key);
+      } catch (error) {
+        return null;
+      }
+    },
+    setItem: function (key, value) {
+      try {
+        if (getRemember()) {
+          localStorage.setItem(key, value);
+          try { sessionStorage.removeItem(key); } catch (error) {}
+        } else {
+          sessionStorage.setItem(key, value);
+          try { localStorage.removeItem(key); } catch (error) {}
+        }
+      } catch (error) {
+        logError('storage', error);
+      }
+    },
+    removeItem: function (key) {
+      try { localStorage.removeItem(key); } catch (error) {}
+      try { sessionStorage.removeItem(key); } catch (error) {}
+    }
+  };
+
+  /* ---------- Client ---------- */
+  function createClient() {
+    if (!window.supabase || typeof window.supabase.createClient !== 'function') return null;
+    if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+
+    try {
+      return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+        auth: {
+          storage: authStorage,
+          storageKey: AUTH_STORAGE_KEY,
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+          flowType: 'pkce'
+        },
+        global: {
+          headers: { 'x-application-name': 'important-notes' }
+        }
+      });
     } catch (error) {
-      return fallback;
+      logError('init', error);
+      return null;
     }
   }
 
-  function writeJSON(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
+  function requireClient() {
+    if (!client) {
+      throw makeError('not-configured', 'تعذّر الاتصال بخدمة Supabase. تحقق من اتصالك بالإنترنت ثم أعد تحميل الصفحة.');
+    }
+    return client;
   }
 
+  /* ---------- Helpers ---------- */
   function normalizeEmail(email) {
     return String(email || '').trim().toLowerCase();
   }
 
-  function uid(prefix) {
+  function uid() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
-      return prefix + '_' + window.crypto.randomUUID();
+      return window.crypto.randomUUID();
     }
-    return prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 11);
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (character) {
+      var random = Math.random() * 16 | 0;
+      var value = character === 'x' ? random : (random & 0x3 | 0x8);
+      return value.toString(16);
+    });
   }
 
   function randomAvatarColor() {
     return AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
   }
 
-  function publicUser(user) {
-    if (!user) return null;
+  function parseDate(value) {
+    var time = Date.parse(value);
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  function validCategory(value) {
+    return CATEGORIES.some(function (category) { return category.id === value; }) ? value : 'general';
+  }
+
+  function validColor(value) {
+    return NOTE_COLORS.indexOf(value) !== -1 ? value : 'default';
+  }
+
+  function validTheme(value) {
+    return THEMES.indexOf(value) !== -1 ? value : 'system';
+  }
+
+  function validSort(value) {
+    return SORTS.indexOf(value) !== -1 ? value : 'updated-desc';
+  }
+
+  function fallbackName(authUser) {
+    var metadata = (authUser && authUser.user_metadata) || {};
+    var name = typeof metadata.name === 'string' ? metadata.name.trim() : '';
+    if (!name && authUser && authUser.email) name = String(authUser.email).split('@')[0];
+    return (name || 'مستخدم').slice(0, 60);
+  }
+
+  /* ---------- Mapping ---------- */
+  function mapUser(authUser, profile) {
+    profile = profile || {};
     return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      avatarColor: user.avatarColor || 'emerald',
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt
+      id: authUser.id,
+      name: profile.name || fallbackName(authUser),
+      email: authUser.email || '',
+      avatarColor: AVATAR_COLORS.indexOf(profile.avatar_color) !== -1 ? profile.avatar_color : 'emerald',
+      createdAt: parseDate(profile.created_at) || parseDate(authUser.created_at) || Date.now(),
+      updatedAt: parseDate(profile.updated_at) || Date.now(),
+      isDemo: !!authUser.is_anonymous || String(authUser.email || '').toLowerCase() === DEMO.email,
+      welcomeSeeded: profile.welcome_seeded === true,
+      prefs: {
+        theme: validTheme(profile.theme),
+        layout: profile.layout === 'list' ? 'list' : 'grid',
+        sort: validSort(profile.sort)
+      }
     };
   }
 
-  function getUsers() {
-    var users = readJSON(USERS_KEY, []);
-    return Array.isArray(users) ? users : [];
+  function mapNote(row) {
+    return {
+      id: row.id,
+      title: row.title || '',
+      content: row.content || '',
+      category: validCategory(row.category),
+      color: validColor(row.color),
+      pinned: row.pinned === true,
+      favorite: row.favorite === true,
+      createdAt: parseDate(row.created_at) || Date.now(),
+      updatedAt: parseDate(row.updated_at) || Date.now()
+    };
   }
 
-  function saveUsers(users) {
-    writeJSON(USERS_KEY, users);
+  function notePayload(note) {
+    return {
+      title: String(note.title || '').trim().slice(0, 160),
+      content: String(note.content || '').slice(0, 20000),
+      category: validCategory(note.category),
+      color: validColor(note.color),
+      pinned: note.pinned === true,
+      favorite: note.favorite === true
+    };
   }
 
-  function findUserByEmail(email) {
-    var target = normalizeEmail(email);
-    return getUsers().find(function (user) {
-      return normalizeEmail(user.email) === target;
-    }) || null;
+  function noteRow(note, userId) {
+    var payload = notePayload(note);
+    payload.id = note.id;
+    payload.user_id = userId;
+    payload.created_at = new Date(Number(note.createdAt) || Date.now()).toISOString();
+    payload.updated_at = new Date(Number(note.updatedAt) || Date.now()).toISOString();
+    return payload;
   }
 
-  function findUserById(id) {
-    return getUsers().find(function (user) {
-      return user.id === id;
-    }) || null;
+  function sameNote(first, second) {
+    return first.title === second.title &&
+      first.content === second.content &&
+      first.category === second.category &&
+      first.color === second.color &&
+      !!first.pinned === !!second.pinned &&
+      !!first.favorite === !!second.favorite;
   }
 
-  async function createUser(options) {
+  /* ---------- Profiles ---------- */
+  async function createFallbackProfile(authUser) {
+    var { data, error } = await requireClient()
+      .from('profiles')
+      .upsert({
+        id: authUser.id,
+        name: fallbackName(authUser),
+        avatar_color: randomAvatarColor()
+      }, { onConflict: 'id' })
+      .select('*')
+      .single();
+
+    if (error) throw dbError(error);
+    return data;
+  }
+
+  async function getProfile(authUser) {
+    var { data, error } = await requireClient()
+      .from('profiles')
+      .select('*')
+      .eq('id', authUser.id)
+      .maybeSingle();
+
+    if (error) throw dbError(error);
+    if (data) return data;
+    return createFallbackProfile(authUser);
+  }
+
+  async function fetchCurrentUser(authUser) {
+    var profile = await getProfile(authUser);
+    var user = mapUser(authUser, profile);
+    currentUser = user;
+    return user;
+  }
+
+  async function ensureWelcomeNote(user) {
+    if (!user || user.welcomeSeeded || user.isDemo) return;
+
+    var { count, error } = await requireClient()
+      .from('notes')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+
+    if (error) throw dbError(error);
+
+    if (!count) {
+      var { error: insertError } = await requireClient()
+        .from('notes')
+        .insert([noteRow(makeWelcomeNote(user.name), user.id)]);
+      if (insertError) throw dbError(insertError);
+    }
+
+    var { error: profileError } = await requireClient()
+      .from('profiles')
+      .update({ welcome_seeded: true })
+      .eq('id', user.id);
+    if (profileError) throw dbError(profileError);
+
+    user.welcomeSeeded = true;
+  }
+
+  /* ---------- Auth ---------- */
+  function init() {
+    client = createClient();
+    return !!client;
+  }
+
+  function isConfigured() {
+    return !!client;
+  }
+
+  async function restoreSession() {
+    if (!client) return null;
+
+    var { data, error } = await client.auth.getSession();
+    if (error) throw authError(error);
+    if (!data || !data.session || !data.session.user) return null;
+
+    var user = await fetchCurrentUser(data.session.user);
+    await ensureWelcomeNote(user);
+    await ensureDemoNotes(user);
+    return user;
+  }
+
+  async function signIn(email, password, remember) {
+    var activeClient = requireClient();
+    var normalized = normalizeEmail(email);
+
+    setRemember(remember !== false);
+    if (remember === false) {
+      try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch (error) {}
+    } else {
+      try { sessionStorage.removeItem(AUTH_STORAGE_KEY); } catch (error) {}
+    }
+
+    var { data, error } = await activeClient.auth.signInWithPassword({
+      email: normalized,
+      password: String(password || '')
+    });
+
+    if (error) throw authError(error);
+    if (!data || !data.user) {
+      throw makeError('invalid-credentials', 'البريد الإلكتروني أو كلمة المرور غير صحيحة.');
+    }
+
+    var user = await fetchCurrentUser(data.user);
+    await ensureWelcomeNote(user);
+    return user;
+  }
+
+  async function signUp(options) {
+    var activeClient = requireClient();
     var name = String(options.name || '').trim();
-    var email = String(options.email || '').trim();
+    var email = normalizeEmail(options.email);
     var password = String(options.password || '');
-    var avatarColor = AVATAR_COLORS.indexOf(options.avatarColor) !== -1
-      ? options.avatarColor
-      : randomAvatarColor();
 
-    if (name.length < 2) {
-      throw makeError('invalid-name', 'يرجى إدخال اسم صحيح.');
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-      throw makeError('invalid-email', 'يرجى إدخال بريد إلكتروني صحيح.');
-    }
-    if (normalizeEmail(email) === DEMO.email && options.isDemo !== true) {
-      throw makeError('email-reserved', 'هذا البريد مخصص للحساب التجريبي. يرجى استخدام بريد آخر.');
-    }
-    if (findUserByEmail(email)) {
-      throw makeError('email-exists', 'هذا البريد الإلكتروني مسجّل مسبقاً على هذا الجهاز.');
-    }
-    if (password.length < 8) {
-      throw makeError('weak-password', 'كلمة المرور يجب ألا تقل عن 8 أحرف.');
-    }
+    setRemember(true);
 
-    var passwordRecord = await window.HNHash.hashPassword(password);
-    var now = Date.now();
-    var user = {
-      id: uid('usr'),
-      name: name,
+    var { data, error } = await activeClient.auth.signUp({
       email: email,
-      password: passwordRecord,
-      avatarColor: avatarColor,
-      isDemo: options.isDemo === true,
-      createdAt: now,
-      updatedAt: now
-    };
+      password: password,
+      options: { data: { name: name } }
+    });
 
-    var users = getUsers();
-    users.push(user);
-    saveUsers(users);
-    return publicUser(user);
+    if (error) throw authError(error);
+    if (!data || !data.user) {
+      throw makeError('auth', 'تعذّر إنشاء الحساب. حاول مرة أخرى.');
+    }
+
+    if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      throw makeError('email-exists', 'هذا البريد الإلكتروني مسجّل مسبقاً. سجّل الدخول بدلاً من ذلك.');
+    }
+
+    if (!data.session) {
+      return { user: null, needsConfirmation: true };
+    }
+
+    var user = await fetchCurrentUser(data.user);
+
+    if (options.prefs) {
+      try { await savePrefs(options.prefs); } catch (prefsError) {}
+    }
+
+    await ensureWelcomeNote(user);
+    return { user: user, needsConfirmation: false };
   }
 
-  async function authenticate(email, password) {
-    var user = findUserByEmail(email);
-    if (!user) return null;
+  async function ensureDemoNotes(user) {
+    if (!user || !user.isDemo || user.welcomeSeeded) return;
 
-    var valid = await window.HNHash.verifyPassword(String(password || ''), user.password);
-    return valid ? publicUser(user) : null;
+    var activeClient = requireClient();
+
+    var { count, error: countError } = await activeClient
+      .from('notes')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+
+    if (countError) throw dbError(countError);
+
+    if (!count) {
+      var rows = buildDemoNotes().map(function (note) { return noteRow(note, user.id); });
+      var { error: insertError } = await activeClient.from('notes').insert(rows);
+      if (insertError) throw dbError(insertError);
+    }
+
+    var { error: profileError } = await activeClient
+      .from('profiles')
+      .update({ welcome_seeded: true })
+      .eq('id', user.id);
+    if (profileError) throw dbError(profileError);
+
+    user.welcomeSeeded = true;
   }
 
-  function updateProfile(userId, changes) {
-    var users = getUsers();
-    var index = users.findIndex(function (user) { return user.id === userId; });
-    if (index === -1) throw makeError('not-found', 'تعذّر العثور على الحساب.');
+  async function signInDemo() {
+    var activeClient = requireClient();
 
-    var user = users[index];
+    setRemember(true);
+    try { sessionStorage.removeItem(AUTH_STORAGE_KEY); } catch (error) {}
+
+    var { data, error } = await activeClient.auth.signInWithPassword({
+      email: DEMO.email,
+      password: DEMO.password
+    });
+
+    if (error) {
+      if (String(error.code || '') === 'invalid_credentials' || /invalid login credentials/i.test(String(error.message || ''))) {
+        throw makeError('demo-unavailable', 'الحساب التجريبي غير مهيّأ بعد. أنشئ المستخدم demo@notes.app في لوحة Supabase ثم حاول مرة أخرى.');
+      }
+      throw authError(error);
+    }
+    if (!data || !data.user) {
+      throw makeError('demo-unavailable', 'تعذّر فتح الحساب التجريبي حالياً.');
+    }
+
+    var user = await fetchCurrentUser(data.user);
+    await ensureDemoNotes(user);
+    return user;
+  }
+
+  async function signOut() {
+    if (client) {
+      try {
+        await client.auth.signOut();
+      } catch (error) {
+        logError('signout', error);
+      }
+    }
+    currentUser = null;
+    clearAuthStorage();
+  }
+
+  async function updateProfile(changes) {
+    if (!currentUser) throw makeError('not-authenticated', 'يرجى تسجيل الدخول أولاً.');
+
+    var payload = {};
+
     if (typeof changes.name === 'string') {
       var name = changes.name.trim();
       if (name.length < 2) throw makeError('invalid-name', 'يرجى إدخال اسم صحيح.');
-      user.name = name.slice(0, 60);
+      payload.name = name.slice(0, 60);
     }
+
     if (typeof changes.avatarColor === 'string' && AVATAR_COLORS.indexOf(changes.avatarColor) !== -1) {
-      user.avatarColor = changes.avatarColor;
+      payload.avatar_color = changes.avatarColor;
     }
-    user.updatedAt = Date.now();
-    users[index] = user;
-    saveUsers(users);
-    return publicUser(user);
+
+    if (!Object.keys(payload).length) return currentUser;
+
+    var { data, error } = await requireClient()
+      .from('profiles')
+      .update(payload)
+      .eq('id', currentUser.id)
+      .select('*')
+      .single();
+
+    if (error) throw dbError(error);
+
+    var updated = mapUser({
+      id: currentUser.id,
+      email: currentUser.email,
+      created_at: new Date(currentUser.createdAt).toISOString()
+    }, data);
+
+    currentUser = updated;
+    return updated;
   }
 
-  async function changePassword(userId, currentPassword, newPassword) {
-    var users = getUsers();
-    var index = users.findIndex(function (user) { return user.id === userId; });
-    if (index === -1) throw makeError('not-found', 'تعذّر العثور على الحساب.');
+  async function changePassword(currentPassword, newPassword) {
+    var activeClient = requireClient();
+    if (!currentUser) throw makeError('not-authenticated', 'يرجى تسجيل الدخول أولاً.');
+    assertNotDemo('تغيير كلمة مروره');
+    if (!currentUser.email) throw makeError('auth', 'تعذّر التحقق من البريد الإلكتروني للحساب.');
     if (!newPassword || newPassword.length < 8) {
       throw makeError('weak-password', 'كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف.');
     }
 
-    var valid = await window.HNHash.verifyPassword(String(currentPassword || ''), users[index].password);
-    if (!valid) {
-      throw makeError('wrong-password', 'كلمة المرور الحالية غير صحيحة.');
+    var { error: verifyError } = await activeClient.auth.signInWithPassword({
+      email: currentUser.email,
+      password: String(currentPassword || '')
+    });
+
+    if (verifyError) {
+      if (String(verifyError.code || '') === 'invalid_credentials' || /invalid login credentials/i.test(String(verifyError.message || ''))) {
+        throw makeError('wrong-password', 'كلمة المرور الحالية غير صحيحة.');
+      }
+      throw authError(verifyError);
     }
 
-    users[index].password = await window.HNHash.hashPassword(newPassword);
-    users[index].updatedAt = Date.now();
-    saveUsers(users);
+    var { error } = await activeClient.auth.updateUser({ password: newPassword });
+    if (error) throw authError(error);
+
     return true;
   }
 
-  function deleteAccount(userId) {
-    var users = getUsers().filter(function (user) { return user.id !== userId; });
-    saveUsers(users);
-    try {
-      localStorage.removeItem(NOTES_PREFIX + userId);
-      localStorage.removeItem(PREFS_PREFIX + userId);
-    } catch (error) {}
-    clearSession();
+  async function deleteAccount() {
+    if (!currentUser) throw makeError('not-authenticated', 'يرجى تسجيل الدخول أولاً.');
+    assertNotDemo('حذفه');
+
+    var { error } = await requireClient().rpc('delete_own_account');
+    if (error) throw dbError(error);
+
+    if (client) {
+      try { await client.auth.signOut({ scope: 'local' }); } catch (signOutError) {}
+    }
+    currentUser = null;
+    clearAuthStorage();
   }
 
-  /* ---------- Sessions ---------- */
-  function startSession(userId, remember) {
-    clearSession();
-    var now = Date.now();
+  /* ---------- Preferences ---------- */
+  function savePrefs(prefs) {
+    if (!client || !currentUser) return Promise.resolve();
+
+    var userId = currentUser.id;
     var payload = {
-      userId: userId,
-      createdAt: now,
-      expiresAt: remember
-        ? now + SESSION_DAYS * 24 * 60 * 60 * 1000
-        : now + SESSION_HOURS * 60 * 60 * 1000
+      theme: validTheme(prefs && prefs.theme),
+      layout: prefs && prefs.layout === 'list' ? 'list' : 'grid',
+      sort: validSort(prefs && prefs.sort)
     };
 
-    try {
-      if (remember) {
-        localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
-      } else {
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
-      }
-    } catch (error) {
-      throw makeError('storage', 'تعذّر إنشاء الجلسة. تحقق من إعدادات المتصفح.');
+    function run() {
+      return client
+        .from('profiles')
+        .update(payload)
+        .eq('id', userId)
+        .then(function (result) {
+          if (result.error) throw dbError(result.error);
+          return true;
+        });
     }
-  }
 
-  function clearSession() {
-    try { localStorage.removeItem(SESSION_KEY); } catch (error) {}
-    try { sessionStorage.removeItem(SESSION_KEY); } catch (error) {}
-  }
-
-  function readSession() {
-    var stores = [];
-    try { stores.push(sessionStorage); } catch (error) {}
-    try { stores.push(localStorage); } catch (error) {}
-
-    for (var i = 0; i < stores.length; i++) {
-      try {
-        var raw = stores[i].getItem(SESSION_KEY);
-        if (!raw) continue;
-        var payload = JSON.parse(raw);
-        if (payload && payload.userId && payload.expiresAt) {
-          return payload;
-        }
-        stores[i].removeItem(SESSION_KEY);
-      } catch (error) {
-        try { stores[i].removeItem(SESSION_KEY); } catch (e) {}
-      }
-    }
-    return null;
-  }
-
-  function restoreSession() {
-    var session = readSession();
-    if (!session) return null;
-    if (Date.now() > session.expiresAt) {
-      clearSession();
-      return null;
-    }
-    var user = findUserById(session.userId);
-    if (!user) {
-      clearSession();
-      return null;
-    }
-    return publicUser(user);
+    prefsQueue = prefsQueue.then(run, run);
+    return prefsQueue;
   }
 
   /* ---------- Notes ---------- */
-  function getNotes(userId) {
-    var notes = readJSON(NOTES_PREFIX + userId, []);
-    return Array.isArray(notes) ? notes : [];
+  async function getNotes() {
+    var activeClient = requireClient();
+    if (!currentUser) return [];
+
+    var { data, error } = await activeClient
+      .from('notes')
+      .select('*')
+      .eq('user_id', currentUser.id)
+      .order('updated_at', { ascending: false });
+
+    if (error) throw dbError(error);
+    return (data || []).map(mapNote);
   }
 
-  function saveNotes(userId, notes) {
-    writeJSON(NOTES_PREFIX + userId, Array.isArray(notes) ? notes : []);
+  async function insertNoteRows(rows) {
+    var chunkSize = 100;
+    for (var index = 0; index < rows.length; index += chunkSize) {
+      var { error } = await requireClient().from('notes').insert(rows.slice(index, index + chunkSize));
+      if (error) throw dbError(error);
+    }
+  }
+
+  async function deleteNoteRows(ids, userId) {
+    var chunkSize = 100;
+    for (var index = 0; index < ids.length; index += chunkSize) {
+      var { error } = await requireClient()
+        .from('notes')
+        .delete()
+        .in('id', ids.slice(index, index + chunkSize))
+        .eq('user_id', userId);
+      if (error) throw dbError(error);
+    }
+  }
+
+  async function doSaveNotes(userId, previous, next) {
+    var previousById = {};
+    previous.forEach(function (note) { previousById[note.id] = note; });
+
+    var nextById = {};
+    next.forEach(function (note) { nextById[note.id] = note; });
+
+    var added = next.filter(function (note) { return !previousById[note.id]; });
+    var removed = previous.filter(function (note) { return !nextById[note.id]; }).map(function (note) { return note.id; });
+    var changed = next.filter(function (note) {
+      var old = previousById[note.id];
+      return old && !sameNote(old, note);
+    });
+
+    var tasks = [];
+
+    if (added.length) {
+      tasks.push(insertNoteRows(added.map(function (note) { return noteRow(note, userId); })));
+    }
+
+    if (removed.length) {
+      if (!next.length) {
+        tasks.push(requireClient().from('notes').delete().eq('user_id', userId).then(function (result) {
+          if (result.error) throw dbError(result.error);
+        }));
+      } else {
+        tasks.push(deleteNoteRows(removed, userId));
+      }
+    }
+
+    changed.forEach(function (note) {
+      tasks.push(requireClient()
+        .from('notes')
+        .update(notePayload(note))
+        .eq('id', note.id)
+        .eq('user_id', userId)
+        .then(function (result) {
+          if (result.error) throw dbError(result.error);
+        }));
+    });
+
+    await Promise.all(tasks);
+  }
+
+  function saveNotes(previous, next) {
+    if (!currentUser) {
+      return Promise.reject(makeError('not-authenticated', 'يرجى تسجيل الدخول أولاً.'));
+    }
+
+    var userId = currentUser.id;
+    var list = Array.isArray(previous) ? previous : [];
+    var target = Array.isArray(next) ? next : [];
+
+    function run() {
+      return doSaveNotes(userId, list, target);
+    }
+
+    notesQueue = notesQueue.then(run, run);
+    return notesQueue;
   }
 
   function makeNote(data) {
     var now = Date.now();
     return {
-      id: uid('note'),
+      id: uid(),
       title: String(data.title || '').trim().slice(0, 160),
       content: String(data.content || '').slice(0, 20000),
-      category: CATEGORIES.some(function (c) { return c.id === data.category; }) ? data.category : 'general',
-      color: NOTE_COLORS.indexOf(data.color) !== -1 ? data.color : 'default',
+      category: validCategory(data.category),
+      color: validColor(data.color),
       pinned: data.pinned === true,
       favorite: data.favorite === true,
       createdAt: Number(data.createdAt) || now,
@@ -305,7 +744,7 @@
     var greeting = firstName ? 'أهلاً بك، ' + firstName + ' 👋' : 'أهلاً بك 👋';
     return makeNote({
       title: 'مساحتك الخاصة جاهزة',
-      content: greeting + '\n\nهذه مساحتك الشخصية لتدوين كل ما يهمك، بعيداً عن أعين الآخرين. إليك بعض النصائح السريعة:\n\n• استخدم زر «ملاحظة جديدة» لتدوين فكرة في أي وقت.\n• ثبّت الملاحظات المهمة لتظهر في أعلى القائمة.\n• أضف ما تعود إليه كثيراً إلى المفضلة.\n• نظّم أفكارك عبر التصنيفات الملوّنة.\n• ابحث بسرعة بالضغط على Ctrl + K.\n\nملاحظاتك محفوظة على هذا الجهاز فقط، ولا يستطيع أي مستخدم آخر الوصول إليها.',
+      content: greeting + '\n\nهذه مساحتك الشخصية لتدوين كل ما يهمك، محفوظة بأمان في حسابك. إليك بعض النصائح السريعة:\n\n• استخدم زر «ملاحظة جديدة» لتدوين فكرة في أي وقت.\n• ثبّت الملاحظات المهمة لتظهر في أعلى القائمة.\n• أضف ما تعود إليه كثيراً إلى المفضلة.\n• نظّم أفكارك عبر التصنيفات الملوّنة.\n• ابحث بسرعة بالضغط على Ctrl + K.\n\nملاحظاتك محفوظة في حسابك الخاص، ولا يستطيع أي مستخدم آخر الوصول إليها.',
       category: 'general',
       color: 'mint',
       pinned: true,
@@ -391,52 +830,12 @@
     ];
   }
 
-  async function ensureDemo() {
-    var existing = findUserByEmail(DEMO.email);
-    if (existing) {
-      if (!existing.isDemo) {
-        throw makeError('demo-conflict', 'هذا البريد مستخدم بحساب عادي على هذا الجهاز، لذلك لا يمكن فتح الحساب التجريبي. سجّل الدخول بكلمة المرور الخاصة بهذا الحساب.');
-      }
-      if (getNotes(existing.id).length === 0) {
-        saveNotes(existing.id, buildDemoNotes());
-      }
-      return publicUser(existing);
-    }
-
-    var user = await createUser({
-      name: DEMO.name,
-      email: DEMO.email,
-      password: DEMO.password,
-      avatarColor: 'rose',
-      isDemo: true
-    });
-    saveNotes(user.id, buildDemoNotes());
-    savePrefs(user.id, { theme: 'light', layout: 'grid', sort: 'updated-desc' });
-    return user;
-  }
-
-  /* ---------- Preferences ---------- */
-  function getPrefs(userId) {
-    var prefs = readJSON(PREFS_PREFIX + userId, {});
-    if (!prefs || typeof prefs !== 'object') prefs = {};
-    return {
-      theme: ['light', 'dark', 'system'].indexOf(prefs.theme) !== -1 ? prefs.theme : 'system',
-      layout: prefs.layout === 'list' ? 'list' : 'grid',
-      sort: ['updated-desc', 'updated-asc', 'created-desc', 'title-asc'].indexOf(prefs.sort) !== -1
-        ? prefs.sort
-        : 'updated-desc'
-    };
-  }
-
-  function savePrefs(userId, prefs) {
-    writeJSON(PREFS_PREFIX + userId, prefs);
-  }
-
   /* ---------- Data portability ---------- */
   function exportData(user, notes) {
     return {
       app: 'important-notes',
-      version: 1,
+      version: 2,
+      storage: 'supabase',
       exportedAt: new Date().toISOString(),
       user: {
         name: user.name,
@@ -484,11 +883,11 @@
       if (updatedAt < createdAt) updatedAt = createdAt;
 
       imported.push({
-        id: uid('note'),
+        id: uid(),
         title: title,
         content: content,
-        category: CATEGORIES.some(function (c) { return c.id === item.category; }) ? item.category : 'general',
-        color: NOTE_COLORS.indexOf(item.color) !== -1 ? item.color : 'default',
+        category: validCategory(item.category),
+        color: validColor(item.color),
         pinned: item.pinned === true,
         favorite: item.favorite === true,
         createdAt: createdAt,
@@ -503,24 +902,14 @@
     return imported;
   }
 
-  function getUsage(userId) {
-    var bytes = 0;
-    var encoder = new TextEncoder();
-    var keys = [NOTES_PREFIX + userId, PREFS_PREFIX + userId];
-
-    keys.forEach(function (key) {
-      try {
-        var raw = localStorage.getItem(key);
-        if (raw) bytes += encoder.encode(raw).length;
-      } catch (error) {}
-    });
-
-    var user = findUserById(userId);
-    if (user) {
-      try { bytes += encoder.encode(JSON.stringify(publicUser(user))).length; } catch (error) {}
+  /* ---------- Misc ---------- */
+  function getUsage(notes) {
+    try {
+      var encoder = new TextEncoder();
+      return encoder.encode(JSON.stringify(notes || [])).length;
+    } catch (error) {
+      return 0;
     }
-
-    return bytes;
   }
 
   function formatBytes(bytes) {
@@ -544,32 +933,39 @@
     return total;
   }
 
+  /* ---------- Public API ---------- */
   window.HNStore = {
     CATEGORIES: CATEGORIES,
     NOTE_COLORS: NOTE_COLORS,
     AVATAR_COLORS: AVATAR_COLORS,
     DEMO_EMAIL: DEMO.email,
-    isStorageAvailable: isStorageAvailable,
-    createUser: createUser,
-    authenticate: authenticate,
-    findUserByEmail: findUserByEmail,
+
+    init: init,
+    isConfigured: isConfigured,
+    restoreSession: restoreSession,
+    signIn: signIn,
+    signUp: signUp,
+    signInDemo: signInDemo,
+    signOut: signOut,
     updateProfile: updateProfile,
     changePassword: changePassword,
     deleteAccount: deleteAccount,
-    startSession: startSession,
-    clearSession: clearSession,
-    restoreSession: restoreSession,
+
     getNotes: getNotes,
     saveNotes: saveNotes,
     makeNote: makeNote,
     makeWelcomeNote: makeWelcomeNote,
-    ensureDemo: ensureDemo,
-    getPrefs: getPrefs,
     savePrefs: savePrefs,
+
     exportData: exportData,
     parseImport: parseImport,
     getUsage: getUsage,
     formatBytes: formatBytes,
-    countWords: countWords
+    countWords: countWords,
+    errorMessage: errorMessage
   };
+
+  // The CDN and config scripts are loaded before this file (all deferred in
+  // document order), so the client can be created immediately.
+  init();
 })();

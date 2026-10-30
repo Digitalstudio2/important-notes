@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="ملاحظات هامة — مساحة عربية أنيقة لتدوين ملاحظاتك وتنظيم أفكارك بخصوصية كاملة. حسابات منفصلة وبيانات محلية على جهازك.">
+  <meta name="description" content="ملاحظات هامة — مساحة عربية أنيقة لتدوين ملاحظاتك وتنظيم أفكارك. حسابات آمنة وملاحظات محفوظة في السحابة مع حماية كاملة للبيانات.">
   <meta name="theme-color" content="#0f172a">
   <title>ملاحظات هامة — مساحتك الشخصية</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop stop-color='%2314b8a6'/%3E%3Cstop offset='1' stop-color='%230ea5e9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='18' fill='url(%23g)'/%3E%3Cpath d='M18 23h28M18 32h19M18 41h12' stroke='white' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='46' cy='43' r='7' fill='%23f3ce8b'/%3E%3Cpath d='m43 43 2 2 3.5-4' stroke='%230f172a' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
@@ -148,7 +148,7 @@
               </div>
               <p class="field__error" data-error-for="registerConfirm" hidden></p>
             </div>
-            <p class="register-terms">بإنشائك الحساب تقرّ بأن بياناتك ستُحفظ على هذا الجهاز فقط.</p>
+            <p class="register-terms">بإنشائك الحساب تقرّ بأن ملاحظاتك ستُحفظ بشكل آمن في حسابك الخاص.</p>
             <button class="btn btn--primary btn--block auth__submit" id="registerSubmit" type="submit">
               <span class="btn__label">إنشاء الحساب</span>
               <span class="spinner" aria-hidden="true"></span>
@@ -167,14 +167,14 @@
 
         <div class="privacy-note">
           <span class="privacy-note__icon" aria-hidden="true"><svg class="icon"><use href="#i-shield"></use></svg></span>
-          <p><strong>خصوصية بالتصميم.</strong> حساباتك وملاحظاتك محفوظة داخل هذا المتصفح فقط، ولا تُرسل إلى أي خادم.</p>
+          <p><strong>خصوصية بالتصميم.</strong> ملاحظاتك محفوظة في حسابك الخاص ومحمية بقواعد أمان على مستوى الصفوف، ولا يستطيع أي مستخدم آخر الوصول إليها.</p>
         </div>
       </div>
 
       <footer class="auth__footer">
         <span>© <span id="authYear">2026</span> ملاحظات هامة</span>
         <span class="auth__footer-sep" aria-hidden="true">·</span>
-        <span>نسخة محلية</span>
+        <span>نسخة سحابية</span>
         <span class="auth__footer-spacer"></span>
         <span>صُنع بعناية للعربية</span>
       </footer>
@@ -197,7 +197,7 @@
             </li>
             <li>
               <span class="feature-list__icon"><svg class="icon" aria-hidden="true"><use href="#i-database"></use></svg></span>
-              <div><strong>يعمل محلياً</strong><span>بياناتك على جهازك، دون خوادم أو انتظار.</span></div>
+              <div><strong>مزامنة سحابية</strong><span>ملاحظاتك في حسابك الآمن، من أي جهاز.</span></div>
             </li>
           </ul>
         </div>
@@ -222,7 +222,7 @@
           </article>
           <article class="preview-card preview-card--side">
             <span class="preview-shield"><svg class="icon"><use href="#i-shield"></use></svg></span>
-            <strong>محمي على جهازك</strong>
+            <strong>محمي في حسابك</strong>
             <p>كل حساب له مساحته الخاصة تماماً.</p>
           </article>
           <div class="preview-toast"><span><svg class="icon"><use href="#i-check"></use></svg></span>تم حفظ الملاحظة</div>
@@ -230,7 +230,7 @@
 
         <div class="brand-showcase__foot">
           <span class="brand-showcase__line" aria-hidden="true"></span>
-          <p>بياناتك تبقى معك — لا خوادم، لا تتبّع، لا حسابات خارجية.</p>
+          <p>بياناتك تبقى ملكك — حساب خاص، حماية على مستوى الصفوف، وبلا تتبّع.</p>
         </div>
       </div>
     </aside>
@@ -301,7 +301,7 @@
 
       <div class="storage-card" id="storageCard">
         <div class="storage-card__head">
-          <span><svg class="icon" aria-hidden="true"><use href="#i-database"></use></svg> التخزين المحلي</span>
+          <span><svg class="icon" aria-hidden="true"><use href="#i-database"></use></svg> حجم الملاحظات</span>
           <span id="storagePercent">0%</span>
         </div>
         <div class="meter" aria-hidden="true"><span id="storageBar" style="width:0%"></span></div>
@@ -446,7 +446,7 @@
         <footer class="content__foot">
           <span>ملاحظات هامة</span>
           <span aria-hidden="true">·</span>
-          <span>بيانات محلية ومحمية على جهازك</span>
+          <span>بياناتك محفوظة بأمان في حسابك</span>
         </footer>
       </main>
     </div>
@@ -651,8 +651,8 @@
             <div class="info-card">
               <span class="info-card__icon" aria-hidden="true"><svg class="icon"><use href="#i-shield"></use></svg></span>
               <div>
-                <strong>حماية على مستوى التطبيق</strong>
-                <p>تُشتق كلمات المرور باستخدام <span dir="ltr">PBKDF2-SHA256</span> مع ملح فريد، ولا تُخزَّن أبداً كنص عادي.</p>
+                <strong>حماية على مستوى قاعدة البيانات</strong>
+                <p>تتم المصادقة عبر <span dir="ltr">Supabase Auth</span>، وتُحمى كل ملاحظة بسياسات <span dir="ltr">RLS</span> تمنع أي مستخدم من الوصول إلى بيانات غيره.</p>
               </div>
             </div>
           </section>
@@ -669,7 +669,7 @@
                 <strong id="settingsStorageText">0 ك.ب</strong>
               </div>
               <div class="meter meter--lg" aria-hidden="true"><span id="settingsStorageBar" style="width:0%"></span></div>
-              <p>تُقدَّر مساحة التخزين المتاحة في المتصفح بنحو 5 ميجابايت لهذا التطبيق.</p>
+              <p>يُعرض حجم ملاحظاتك التقريبي. جميع البيانات محفوظة في حسابك على Supabase.</p>
             </div>
 
             <div class="data-row">
@@ -719,7 +719,7 @@
               <div class="data-row data-row--plain">
                 <div>
                   <strong>حذف الحساب</strong>
-                  <p>حذف الحساب وكل ملاحظاته نهائياً من هذا المتصفح.</p>
+                  <p>حذف الحساب وكل ملاحظاته نهائياً من قاعدة البيانات.</p>
                 </div>
                 <button class="btn btn--danger btn--sm" id="deleteAccountBtn" type="button">حذف الحساب</button>
               </div>
@@ -763,7 +763,7 @@
               <span class="info-card__icon" aria-hidden="true"><svg class="icon"><use href="#i-info"></use></svg></span>
               <div>
                 <strong>تفضيلات محفوظة</strong>
-                <p>يُخزَّن المظهر وطريقة العرض مع حسابك، ويُطبَّقان تلقائياً عند تسجيل الدخول من هذا المتصفح.</p>
+                <p>يُخزَّن المظهر وطريقة العرض مع حسابك، ويُطبَّقان تلقائياً عند تسجيل الدخول من أي جهاز.</p>
               </div>
             </div>
           </section>
@@ -801,7 +801,7 @@
       <div class="confirm">
         <span class="confirm__icon confirm__icon--info" aria-hidden="true"><svg class="icon"><use href="#i-lock"></use></svg></span>
         <h2 id="forgotTitle">استعادة كلمة المرور</h2>
-        <p>تُحفَظ الحسابات محلياً على هذا الجهاز فقط، ولا توجد خدمة بريد لإرسال رابط إعادة التعيين. لأسباب أمنية، لا يمكن الوصول إلى الملاحظات دون كلمة المرور الصحيحة.</p>
+        <p>تُحفَظ الحسابات الآن في قاعدة بيانات آمنة. لإعادة تعيين كلمة المرور، تواصل مع مسؤول التطبيق لإرسال رابط الاستعادة من لوحة تحكم Supabase.</p>
         <p class="confirm__note"><svg class="icon" aria-hidden="true"><use href="#i-info"></use></svg> نصيحة: احتفظ بنسخة احتياطية من ملاحظاتك عبر الإعدادات ← البيانات.</p>
       </div>
       <footer class="confirm__actions">
@@ -881,7 +881,9 @@
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
   </svg>
 
-  <script src="js/crypto.js" defer></script>
+  <!-- Supabase JS (browser UMD build) + public client configuration -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="js/supabase-config.js" defer></script>
   <script src="js/store.js" defer></script>
   <script src="js/app.js" defer></script>
 </body>
