@@ -904,16 +904,33 @@
   <!-- ============ FORGOT PASSWORD ============ -->
   <div class="overlay overlay--top" id="forgotOverlay" hidden>
     <div class="modal modal--confirm" role="dialog" aria-modal="true" aria-labelledby="forgotTitle">
-      <div class="confirm">
-        <span class="confirm__icon confirm__icon--info" aria-hidden="true"><svg class="icon"><use href="#i-lock"></use></svg></span>
-        <h2 id="forgotTitle">استعادة كلمة المرور</h2>
-        <p>تُحفَظ الحسابات الآن في قاعدة بيانات آمنة. لإعادة تعيين كلمة المرور، تواصل مع مسؤول التطبيق لإرسال رابط الاستعادة من لوحة تحكم Supabase.</p>
-        <p class="confirm__note"><svg class="icon" aria-hidden="true"><use href="#i-info"></use></svg> نصيحة: احتفظ بنسخة احتياطية من ملاحظاتك عبر الإعدادات ← البيانات.</p>
-      </div>
-      <footer class="confirm__actions">
-        <button class="btn btn--ghost" id="forgotCancel" type="button">إغلاق</button>
-        <button class="btn btn--primary" id="forgotRegister" type="button">إنشاء حساب جديد</button>
-      </footer>
+      <form id="forgotForm" novalidate>
+        <div class="confirm">
+          <span class="confirm__icon confirm__icon--info" aria-hidden="true"><svg class="icon"><use href="#i-lock"></use></svg></span>
+          <h2 id="forgotTitle">استعادة كلمة المرور</h2>
+          <p>أدخل البريد الإلكتروني المرتبط بحسابك، وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.</p>
+          <div class="form-alert" id="forgotAlert" role="alert" hidden></div>
+          <div class="field confirm__input" id="forgotEmailField">
+            <label for="forgotEmail">البريد الإلكتروني</label>
+            <div class="input-wrap">
+              <svg class="icon input__icon" aria-hidden="true"><use href="#i-mail"></use></svg>
+              <input class="input" id="forgotEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" maxlength="120" spellcheck="false">
+            </div>
+            <p class="field__error" data-error-for="forgotEmail" hidden></p>
+          </div>
+          <div class="confirm__success" id="forgotSuccess" role="status" hidden>
+            <span class="confirm__success-icon" aria-hidden="true"><svg class="icon"><use href="#i-check"></use></svg></span>
+            <p>إذا كان البريد مسجّلاً لدينا، فستصلك رسالة تحتوي على رابط إعادة التعيين خلال دقائق. تحقّق أيضاً من مجلد البريد غير المرغوب فيه.</p>
+          </div>
+        </div>
+        <footer class="confirm__actions">
+          <button class="btn btn--ghost" id="forgotCancel" type="button">إغلاق</button>
+          <button class="btn btn--primary" id="forgotSubmit" type="submit">
+            <span class="btn__label">إرسال رابط الاستعادة</span>
+            <span class="spinner" aria-hidden="true"></span>
+          </button>
+        </footer>
+      </form>
     </div>
   </div>
 

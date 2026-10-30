@@ -145,7 +145,7 @@ supabase/migrations/001_harden_privileges.sql
 2. **تدوير المفتاح السري `sb_secret_...`:** لم يُنفَّذ بعد. الملف المحلي لا يحتوي رمز وصول إداري (personal access token)، ولا يمكن تدوير المفتاح من قاعدة البيانات.  
    **الإجراء:** من لوحة Supabase → Project Settings → API Keys → Secret keys، أنشئ مفتاحاً جديداً، احذف القديم، ولا تضعه في أي محادثة أو مستودع. التطبيق الثابت لا يستخدم المفتاح السري؛ يستخدم Publishable key فقط.
 
-3. **SMTP والتسجيل:** التسجيل العام معطّل (`disable_signup=true`) وتأكيد البريد مفعّل (`mailer_autoconfirm=false`) حتى إعداد SMTP موثوق. هذا قرار مقصود وليس عطلاً.
+3. **SMTP والتسجيل:** في وقت إعداد هذا التقرير كان التسجيل العام معطّلاً (`disable_signup=true`) وتأكيد البريد مفعّلاً (`mailer_autoconfirm=false`) حتى إعداد SMTP موثوق. **تغيّر هذا القرار في المرحلة 2:** أصبح التسجيل مفتوحاً (`disable_signup=false`) وتأكيد البريد متوقفاً (`mailer_autoconfirm=true`)؛ راجع [`phase2-report.md`](phase2-report.md).
 
 4. **SQL Editor في Supabase:** ما زال يفشل أحياناً بـ`28P01` بعد تغيير كلمة مرور قاعدة البيانات. الحل الحالي هو `psql` المباشر. لا يؤثر على التطبيق.
 

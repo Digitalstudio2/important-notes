@@ -562,6 +562,12 @@
     els.rememberMe = $('#rememberMe');
     els.loginSubmit = $('#loginSubmit');
     els.forgotBtn = $('#forgotBtn');
+    els.forgotForm = $('#forgotForm');
+    els.forgotAlert = $('#forgotAlert');
+    els.forgotEmail = $('#forgotEmail');
+    els.forgotEmailField = $('#forgotEmailField');
+    els.forgotSubmit = $('#forgotSubmit');
+    els.forgotSuccess = $('#forgotSuccess');
     els.registerForm = $('#registerForm');
     els.registerAlert = $('#registerAlert');
     els.registerName = $('#registerName');
@@ -703,7 +709,6 @@
 
     els.forgotOverlay = $('#forgotOverlay');
     els.forgotCancel = $('#forgotCancel');
-    els.forgotRegister = $('#forgotRegister');
     els.noteMenu = $('#noteMenu');
     els.toastRegion = $('#toastRegion');
   }
@@ -2489,6 +2494,58 @@
     }
   }
 
+  function resetForgotForm() {
+    if (!els.forgotForm) return;
+    els.forgotForm.reset();
+    clearFormErrors(els.forgotForm);
+    hideAlert(els.forgotAlert);
+    if (els.forgotSuccess) els.forgotSuccess.hidden = true;
+    if (els.forgotEmailField) els.forgotEmailField.hidden = false;
+    if (els.forgotSubmit) {
+      els.forgotSubmit.hidden = false;
+      setFormLoading(els.forgotSubmit, false);
+    }
+  }
+
+  async function handleForgotPassword(event) {
+    if (event) event.preventDefault();
+    if (!els.forgotForm || els.forgotSubmit.disabled) return;
+
+    var email = els.forgotEmail.value.trim();
+    clearFormErrors(els.forgotForm);
+    hideAlert(els.forgotAlert);
+
+    if (!email) {
+      showFieldError(els.forgotEmail, 'يرجى إدخال البريد الإلكتروني.');
+      els.forgotEmail.focus();
+      return;
+    }
+    if (!EMAIL_RE.test(email)) {
+      showFieldError(els.forgotEmail, 'أدخل بريداً إلكترونياً صحيحاً.');
+      els.forgotEmail.focus();
+      return;
+    }
+
+    setFormLoading(els.forgotSubmit, true);
+    try {
+      await window.HNStore.requestPasswordReset(email);
+      if (els.forgotEmailField) els.forgotEmailField.hidden = true;
+      if (els.forgotSubmit) els.forgotSubmit.hidden = true;
+      if (els.forgotSuccess) els.forgotSuccess.hidden = false;
+      try { els.forgotCancel.focus(); } catch (error) {}
+    } catch (error) {
+      if (error && error.code === 'invalid-email') {
+        showFieldError(els.forgotEmail, error.message);
+        els.forgotEmail.focus();
+      } else {
+        showAlert(els.forgotAlert, window.HNStore.errorMessage(error));
+        shake(els.forgotForm);
+      }
+    } finally {
+      setFormLoading(els.forgotSubmit, false);
+    }
+  }
+
   async function handleDemo(event) {
     if (event) event.preventDefault();
     if (els.demoBtn.disabled) return;
@@ -2696,17 +2753,13 @@
     });
 
     els.forgotBtn.addEventListener('click', function () {
-      openOverlay(els.forgotOverlay, els.forgotCancel);
+      resetForgotForm();
+      openOverlay(els.forgotOverlay, els.forgotEmail);
     });
+    els.forgotForm.addEventListener('submit', handleForgotPassword);
+    bindAuthFieldReset(els.forgotForm, els.forgotAlert);
     els.forgotCancel.addEventListener('click', function () {
       closeOverlay(els.forgotOverlay);
-    });
-    els.forgotRegister.addEventListener('click', function () {
-      closeOverlay(els.forgotOverlay);
-      setAuthMode('register');
-      setTimeout(function () {
-        try { els.registerName.focus(); } catch (error) {}
-      }, reducedMotion ? 0 : 120);
     });
     els.forgotOverlay.addEventListener('click', function (event) {
       if (event.target === els.forgotOverlay) closeOverlay(els.forgotOverlay);

@@ -111,6 +111,12 @@
     if (code === 'signup_disabled' || /signups not allowed/i.test(message)) {
       return makeError('signup-disabled', 'إنشاء الحسابات الجديدة غير مفعّل حالياً.');
     }
+    if (code === 'redirect_to_not_allowed' || /redirect.*not allowed/i.test(message)) {
+      return makeError('redirect-not-allowed', 'تعذّر إرسال الرابط لأن عنوان العودة غير مسموح. تواصل مع مسؤول التطبيق.');
+    }
+    if (code === 'otp_expired' || /token has expired|link is invalid or has expired/i.test(message)) {
+      return makeError('expired-link', 'انتهت صلاحية الرابط. اطلب رابط استعادة جديداً.');
+    }
     if (code === 'over_email_send_rate_limit' || /email rate limit|for security purposes/i.test(message)) {
       return makeError('rate-limit', 'تم إرسال عدد كبير من الرسائل. انتظر قليلاً ثم حاول مرة أخرى.');
     }
@@ -165,6 +171,15 @@
     },
     setItem: function (key, value) {
       try {
+        // The PKCE code verifier for a password-reset email must survive the
+        // jump from the app to the reset page, even when it opens in a new tab
+        // or the visitor previously chose "don't remember me".
+        if (/-code-verifier$/.test(String(key || ''))) {
+          localStorage.setItem(key, value);
+          try { sessionStorage.removeItem(key); } catch (error) {}
+          return;
+        }
+
         if (getRemember()) {
           localStorage.setItem(key, value);
           try { sessionStorage.removeItem(key); } catch (error) {}
@@ -217,6 +232,14 @@
   /* ---------- Helpers ---------- */
   function normalizeEmail(email) {
     return String(email || '').trim().toLowerCase();
+  }
+
+  function passwordResetUrl() {
+    try {
+      return new URL('reset.html', window.location.href).href;
+    } catch (error) {
+      return 'reset.html';
+    }
   }
 
   function uid() {
@@ -521,6 +544,25 @@
 
     await ensureWelcomeNote(user);
     return { user: user, needsConfirmation: false };
+  }
+
+  async function requestPasswordReset(email) {
+    var activeClient = requireClient();
+    var normalized = normalizeEmail(email);
+
+    if (!normalized) {
+      throw makeError('invalid-email', 'يرجى إدخال البريد الإلكتروني.');
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalized)) {
+      throw makeError('invalid-email', 'أدخل بريداً إلكترونياً صحيحاً.');
+    }
+
+    var { error } = await activeClient.auth.resetPasswordForEmail(normalized, {
+      redirectTo: passwordResetUrl()
+    });
+
+    if (error) throw authError(error);
+    return true;
   }
 
   async function ensureDemoNotes(user) {
@@ -1133,6 +1175,7 @@
     restoreSession: restoreSession,
     signIn: signIn,
     signUp: signUp,
+    requestPasswordReset: requestPasswordReset,
     signInDemo: signInDemo,
     signOut: signOut,
     updateProfile: updateProfile,

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="إعادة تعيين كلمة المرور في مساحة التدوين.">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>إعادة تعيين كلمة المرور — مساحة التدوين</title>
+  <link rel="canonical" href="https://digitalstudio2.github.io/important-notes/reset.html">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop stop-color='%2314b8a6'/%3E%3Cstop offset='1' stop-color='%230ea5e9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='18' fill='url(%23g)'/%3E%3Cpath d='M18 23h28M18 32h19M18 41h12' stroke='white' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='46' cy='43' r='7' fill='%23f3ce8b'/%3E%3Cpath d='m43 43 2 2 3.5-4' stroke='%230f172a' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <script>
+    (function () {
+      try {
+        var mode = localStorage.getItem('hn.theme.v1') || 'system';
+        var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme-mode', mode);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="is-booting">
+  <a class="skip-link" href="#mainContent">تجاوز إلى المحتوى</a>
+
+  <main class="auth auth--single view" id="mainContent">
+    <section class="auth__form-panel">
+      <header class="auth__topbar">
+        <a href="index.html" class="brand" aria-label="مساحة التدوين — الصفحة الرئيسية">
+          <span class="brand__mark" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none">
+              <path d="M11 13h18M11 20h12M11 27h8" stroke="white" stroke-width="2.6" stroke-linecap="round"/>
+              <circle cx="28" cy="27" r="4.6" fill="#F3CE8B"/>
+              <path d="m26 27 1.4 1.4 2.5-2.8" stroke="#0f172a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="brand__text">
+            <strong>مساحة التدوين</strong>
+            <small>WRITING SPACE</small>
+          </span>
+        </a>
+        <button class="icon-btn theme-toggle" id="resetThemeToggle" type="button" aria-label="تبديل المظهر" title="تبديل المظهر">
+          <svg class="icon icon--sun" aria-hidden="true"><use href="#i-sun"></use></svg>
+          <svg class="icon icon--moon" aria-hidden="true"><use href="#i-moon"></use></svg>
+        </button>
+      </header>
+
+      <div class="auth__form-wrap">
+        <div class="auth__intro">
+          <span class="eyebrow">أمان الحساب</span>
+          <h1 id="resetHeading">إعادة تعيين كلمة المرور</h1>
+          <p id="resetSubheading">جارٍ التحقق من رابط الاستعادة…</p>
+        </div>
+
+        <div class="form-alert" id="resetAlert" role="alert" aria-live="polite" hidden></div>
+
+        <div class="reset-state reset-loading" id="resetLoading">
+          <span class="spinner" aria-hidden="true"></span>
+          <p>لحظة واحدة، نتحقق من الرابط…</p>
+        </div>
+
+        <form id="resetForm" novalidate hidden>
+          <div class="field">
+            <label for="resetPassword">كلمة المرور الجديدة</label>
+            <div class="input-wrap">
+              <svg class="icon input__icon" aria-hidden="true"><use href="#i-lock"></use></svg>
+              <input class="input" id="resetPassword" type="password" autocomplete="new-password" placeholder="8 أحرف على الأقل" maxlength="128">
+              <button class="input__action" type="button" data-toggle-password="resetPassword" aria-label="إظهار كلمة المرور">
+                <svg class="icon icon--eye" aria-hidden="true"><use href="#i-eye"></use></svg>
+                <svg class="icon icon--eye-off" aria-hidden="true"><use href="#i-eye-off"></use></svg>
+              </button>
+            </div>
+            <div class="strength" id="resetStrength" data-level="0">
+              <div class="strength__bars" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+              <span class="strength__label">قوة كلمة المرور</span>
+            </div>
+            <p class="field__error" data-error-for="resetPassword" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="resetConfirm">تأكيد كلمة المرور</label>
+            <div class="input-wrap">
+              <svg class="icon input__icon" aria-hidden="true"><use href="#i-lock"></use></svg>
+              <input class="input" id="resetConfirm" type="password" autocomplete="new-password" placeholder="أعد إدخال كلمة المرور" maxlength="128">
+              <button class="input__action" type="button" data-toggle-password="resetConfirm" aria-label="إظهار كلمة المرور">
+                <svg class="icon icon--eye" aria-hidden="true"><use href="#i-eye"></use></svg>
+                <svg class="icon icon--eye-off" aria-hidden="true"><use href="#i-eye-off"></use></svg>
+              </button>
+            </div>
+            <p class="field__error" data-error-for="resetConfirm" hidden></p>
+          </div>
+
+          <button class="btn btn--primary btn--block auth__submit" id="resetSubmit" type="submit">
+            <span class="btn__label">حفظ كلمة المرور الجديدة</span>
+            <span class="spinner" aria-hidden="true"></span>
+            <svg class="icon btn__icon" aria-hidden="true"><use href="#i-arrow-left"></use></svg>
+          </button>
+        </form>
+
+        <div class="reset-state" id="resetInvalid" hidden>
+          <span class="confirm__icon confirm__icon--info" aria-hidden="true"><svg class="icon"><use href="#i-lock"></use></svg></span>
+          <h2>تعذّر فتح رابط الاستعادة</h2>
+          <p id="resetInvalidText">رابط الاستعادة غير صالح أو انتهت صلاحيته. اطلب رابطاً جديداً من صفحة تسجيل الدخول.</p>
+          <a class="btn btn--primary btn--block" href="index.html">العودة لتسجيل الدخول</a>
+        </div>
+
+        <div class="reset-state" id="resetSuccess" hidden>
+          <span class="confirm__icon confirm__icon--success" aria-hidden="true"><svg class="icon"><use href="#i-check"></use></svg></span>
+          <h2>تم تحديث كلمة المرور</h2>
+          <p>يمكنك الآن تسجيل الدخول بكلمة المرور الجديدة. لأمان حسابك، سجّل الدخول من جديد.</p>
+          <a class="btn btn--primary btn--block" href="index.html">تسجيل الدخول</a>
+        </div>
+
+        <p class="reset-back" id="resetBack"><a href="index.html">العودة لتسجيل الدخول</a></p>
+      </div>
+
+      <footer class="auth__footer">
+        <span>© <span id="resetYear">2026</span> مساحة التدوين</span>
+        <span class="auth__footer-sep" aria-hidden="true">·</span>
+        <span>نسخة سحابية</span>
+        <span class="auth__footer-spacer"></span>
+        <span>صُنع بعناية للعربية</span>
+      </footer>
+    </section>
+  </main>
+
+  <!-- ============ ICONS ============ -->
+  <svg class="svg-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v2"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="m3 3 18 18"/><path d="M10.6 6.2A10.5 10.5 0 0 1 12 6.1c6 0 9.5 5.9 9.5 5.9a17.4 17.4 0 0 1-3.3 4"/><path d="M6.5 6.8A17 17 0 0 0 2.5 12s3.5 5.9 9.5 5.9a9.8 9.8 0 0 0 4-.8"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m11 6-6 6 6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+  </svg>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="js/supabase-config.js" defer></script>
+  <script src="js/reset.js" defer></script>
+</body>
+</html>
