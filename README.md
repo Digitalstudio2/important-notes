@@ -712,7 +712,7 @@ alter table public.notes add constraint notes_category_check
 
 ## التحقق والاختبار
 
-تم التحقق محلياً من:
+تم التحقق محلياً وعلى الموقع المنشور من:
 
 - تحميل Supabase JS من CDN وإنشاء العميل بنجاح.
 - ظهور شاشة الدخول دون أخطاء في وحدة التحكم.
@@ -721,6 +721,7 @@ alter table public.notes add constraint notes_category_check
 - سلامة تحميل جميع ملفات CSS وJavaScript.
 - سجل النشاط والمشاركة على خادم محلي، بما في ذلك صفحة العرض ورفض الروابط غير الصالحة وحماية XSS.
 - الحساب التجريبي: 7 ملاحظات، إخفاء المشاركة والسجل، وإعادة التعيين عند الدخول الصريح.
+- الموقع المنشور `https://digitalstudio2.github.io/important-notes/` بعد commit `8375d2c`: ظهور السجل والمشاركة، واختبار رابط حقيقي على `share.html#<token>`، وإلغاؤه، وعدم إرسال الرمز إلى خادم الاستضافة.
 
 بعد تشغيل `supabase/schema.sql` وملفات `migrations/`، يُنصح باختبار:
 
