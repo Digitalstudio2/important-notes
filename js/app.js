@@ -43,6 +43,7 @@
 
   var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   var STORAGE_LIMIT = 5 * 1024 * 1024;
+  var ACTIVITY_PAGE_SIZE = 30;
   var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   var numberFormatter;
@@ -55,6 +56,7 @@
   var dateFormatterShort;
   var monthYearFormatter;
   var relativeTimeFormatter;
+  var dateTimeFormatter;
   try {
     dateFormatterFull = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', {
       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
@@ -65,9 +67,12 @@
     monthYearFormatter = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', {
       month: 'long', year: 'numeric'
     });
+    dateTimeFormatter = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', {
+      day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit'
+    });
     relativeTimeFormatter = new Intl.RelativeTimeFormat('ar', { numeric: 'auto' });
   } catch (error) {
-    dateFormatterFull = dateFormatterShort = monthYearFormatter = relativeTimeFormatter = null;
+    dateFormatterFull = dateFormatterShort = monthYearFormatter = relativeTimeFormatter = dateTimeFormatter = null;
   }
 
   var state = {
@@ -78,6 +83,7 @@
     query: '',
     sort: 'updated-desc',
     layout: 'grid',
+    view: 'notes',
     editingId: null,
     editorColor: 'default',
     editorSnapshot: '',
@@ -89,7 +95,14 @@
     confirmConfig: null,
     confirmRequired: '',
     savingNote: false,
-    blockedMessage: ''
+    blockedMessage: '',
+    shareNoteId: null,
+    shareStatus: null,
+    shareToken: '',
+    shareLink: '',
+    shareLoading: false,
+    shareBusy: false,
+    activity: { items: [], loading: false, done: false, stale: false, error: '' }
   };
 
   var els = {};
@@ -191,6 +204,14 @@
   function formatToday() {
     if (!dateFormatterFull) return '';
     return toLatinDigits(dateFormatterFull.format(new Date()));
+  }
+
+  function formatDateTime(timestamp) {
+    var time = Number(timestamp);
+    if (!Number.isFinite(time) || time <= 0) return '';
+    if (dateTimeFormatter) return toLatinDigits(dateTimeFormatter.format(new Date(time)));
+    if (dateFormatterShort) return toLatinDigits(dateFormatterShort.format(new Date(time)));
+    return '';
   }
 
   function formatMemberSince(timestamp) {
@@ -572,6 +593,7 @@
     els.themeSwitch = $('#themeSwitch');
     els.settingsBtn = $('#settingsBtn');
     els.logoutBtn = $('#logoutBtn');
+    els.activityNavBtn = $('#activityNavBtn');
 
     els.searchInput = $('#searchInput');
     els.searchClear = $('#searchClear');
@@ -598,6 +620,23 @@
     els.emptyText = $('#emptyText');
     els.emptyAction = $('#emptyAction');
     els.emptyActionLabel = $('#emptyActionLabel');
+
+    els.pageIntro = $('.page-intro');
+    els.stats = $('.stats');
+    els.notesSection = $('.notes-section');
+    els.activitySection = $('#activitySection');
+    els.activityBackBtn = $('#activityBackBtn');
+    els.activityRefreshBtn = $('#activityRefreshBtn');
+    els.activityError = $('#activityError');
+    els.activityLoading = $('#activityLoading');
+    els.activityList = $('#activityList');
+    els.activityEmpty = $('#activityEmpty');
+    els.activityEmptyTitle = $('#activityEmptyTitle');
+    els.activityEmptyText = $('#activityEmptyText');
+    els.activityRetryBtn = $('#activityRetryBtn');
+    els.activityMoreWrap = $('#activityMoreWrap');
+    els.activityMoreBtn = $('#activityMoreBtn');
+    els.activityCount = $('#activityCount');
 
     els.editorOverlay = $('#editorOverlay');
     els.editorTitleLabel = $('#editorTitleLabel');
@@ -641,6 +680,16 @@
     els.deleteAllBtn = $('#deleteAllBtn');
     els.deleteAccountBtn = $('#deleteAccountBtn');
     els.themeOptions = $('#themeOptions');
+
+    els.shareOverlay = $('#shareOverlay');
+    els.shareNotePreview = $('#shareNotePreview');
+    els.shareNoteCategory = $('#shareNoteCategory');
+    els.shareNoteTitle = $('#shareNoteTitle');
+    els.shareNoteExcerpt = $('#shareNoteExcerpt');
+    els.shareAlert = $('#shareAlert');
+    els.shareState = $('#shareState');
+    els.shareMeta = $('#shareMeta');
+    els.shareActions = $('#shareActions');
 
     els.confirmOverlay = $('#confirmOverlay');
     els.confirmIcon = $('#confirmIcon');
@@ -688,6 +737,10 @@
     state.filter = { type: 'all', category: null };
     state.query = '';
     state.editingId = null;
+    state.view = 'notes';
+    resetActivityState();
+    resetShareState();
+    document.body.classList.remove('is-demo');
 
     els.appView.hidden = true;
     els.authView.hidden = false;
@@ -725,6 +778,9 @@
     state.layout = state.prefs.layout;
     state.editingId = null;
     state.selectedAvatar = user.avatarColor;
+    state.view = 'notes';
+    resetActivityState();
+    resetShareState();
 
     els.authView.hidden = true;
     els.appView.hidden = false;
@@ -738,6 +794,7 @@
     applyTheme(state.prefs.theme, { global: true, user: false });
 
     els.todayLabel.textContent = formatToday();
+    setView('notes');
     renderAll({ animate: true });
 
     document.title = 'ملاحظاتي — مساحة التدوين';
@@ -763,6 +820,7 @@
 
   function renderUser() {
     if (!state.user) return;
+    document.body.classList.toggle('is-demo', !!state.user.isDemo);
     els.sidebarName.textContent = state.user.name;
     els.sidebarEmail.textContent = state.user.email;
     setAvatarAppearance(els.sidebarAvatar, state.user.name, state.user.avatarColor, 'avatar--md');
@@ -780,12 +838,38 @@
     els.countPinned.textContent = formatNumber(counts.pinned);
     els.countFavorites.textContent = formatNumber(counts.favorites);
 
+    updateNavView();
+  }
+
+  function updateNavView() {
+    var onNotes = state.view === 'notes';
+
     $$('.nav-item[data-filter]').forEach(function (button) {
-      var active = state.filter.type === button.getAttribute('data-filter');
+      var active = onNotes && state.filter.type === button.getAttribute('data-filter');
       button.classList.toggle('is-active', active);
       if (active) button.setAttribute('aria-current', 'page');
       else button.removeAttribute('aria-current');
     });
+
+    if (els.activityNavBtn) {
+      var active = state.view === 'activity';
+      els.activityNavBtn.classList.toggle('is-active', active);
+      if (active) els.activityNavBtn.setAttribute('aria-current', 'page');
+      else els.activityNavBtn.removeAttribute('aria-current');
+    }
+  }
+
+  function setView(view) {
+    state.view = view === 'activity' ? 'activity' : 'notes';
+    var onActivity = state.view === 'activity';
+
+    if (els.pageIntro) els.pageIntro.hidden = onActivity;
+    if (els.stats) els.stats.hidden = onActivity;
+    if (els.notesSection) els.notesSection.hidden = onActivity;
+    if (els.activitySection) els.activitySection.hidden = !onActivity;
+
+    updateNavView();
+    document.title = onActivity ? 'سجل النشاط — مساحة التدوين' : 'ملاحظاتي — مساحة التدوين';
   }
 
   function renderCategories() {
@@ -1027,6 +1111,518 @@
     }
   }
 
+  /* ---------- Activity log ---------- */
+  var ACTIVITY_META = {
+    account_created: { label: 'إنشاء الحساب', icon: 'sparkles', tone: 'brand' },
+    login: { label: 'تسجيل دخول', icon: 'login', tone: 'info' },
+    password_changed: { label: 'تغيير كلمة المرور', icon: 'key', tone: 'warning' },
+    profile_updated: { label: 'تحديث الملف الشخصي', icon: 'user', tone: 'brand' },
+    note_created: { label: 'ملاحظة جديدة', icon: 'plus', tone: 'brand' },
+    note_updated: { label: 'تعديل ملاحظة', icon: 'pencil', tone: 'info' },
+    note_deleted: { label: 'حذف ملاحظة', icon: 'trash', tone: 'danger' },
+    share_created: { label: 'إنشاء رابط مشاركة', icon: 'share', tone: 'accent' },
+    share_revoked: { label: 'إلغاء رابط مشاركة', icon: 'link-off', tone: 'danger' }
+  };
+
+  var ACTIVITY_FIELD_LABELS = {
+    title: 'العنوان',
+    content: 'المحتوى',
+    category: 'التصنيف',
+    color: 'اللون',
+    pinned: 'التثبيت',
+    favorite: 'المفضلة',
+    name: 'الاسم',
+    avatar_color: 'لون الصورة'
+  };
+
+  function resetActivityState() {
+    state.activity = { items: [], loading: false, done: false, stale: false, error: '' };
+    if (els.activityList) els.activityList.innerHTML = '';
+    if (els.activityEmpty) els.activityEmpty.hidden = true;
+    if (els.activityLoading) els.activityLoading.hidden = true;
+    if (els.activityMoreWrap) els.activityMoreWrap.hidden = true;
+    if (els.activityError) hideAlert(els.activityError);
+    if (els.activityCount) els.activityCount.textContent = '0';
+  }
+
+  function invalidateActivity() {
+    if (!state.activity) return;
+    state.activity.stale = true;
+  }
+
+  function activityDayStart(timestamp) {
+    var date = new Date(Number(timestamp));
+    if (isNaN(date.getTime())) return 0;
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+  }
+
+  function activityDayLabel(timestamp) {
+    var day = activityDayStart(timestamp);
+    var today = activityDayStart(Date.now());
+    if (day === today) return 'اليوم';
+    if (day === today - 86400000) return 'أمس';
+    if (dateFormatterFull) return toLatinDigits(dateFormatterFull.format(new Date(Number(timestamp))));
+    if (dateFormatterShort) return toLatinDigits(dateFormatterShort.format(new Date(Number(timestamp))));
+    return 'سابقاً';
+  }
+
+  function activityChangedLabels(item) {
+    var changed = item.metadata && item.metadata.changed;
+    if (!Array.isArray(changed)) return [];
+    return changed.map(function (field) {
+      return ACTIVITY_FIELD_LABELS[field] || '';
+    }).filter(Boolean);
+  }
+
+  function activityDescription(item) {
+    var metadata = item.metadata || {};
+    var title = metadata.title ? String(metadata.title).trim() : '';
+    var quoted = title ? '«' + esc(title) + '»' : 'الملاحظة';
+    var category = metadata.category ? getCategory(metadata.category) : null;
+    var categoryText = category ? ' في تصنيف «' + esc(category.name) + '»' : '';
+    var changed = activityChangedLabels(item);
+    var changedText = changed.length ? changed.join('، ') : '';
+    var expiresTime = metadata.expires_at ? Date.parse(metadata.expires_at) : 0;
+    var expires = Number.isFinite(expiresTime) && expiresTime > 0 ? formatDateTime(expiresTime) : '';
+
+    switch (item.eventType) {
+      case 'note_created':
+        return 'أُضيفت ' + quoted + categoryText + '.';
+      case 'note_updated':
+        return 'عُدّلت ' + quoted + (changedText ? ' — ' + esc(changedText) : '') + '.';
+      case 'note_deleted':
+        return 'حُذفت ' + quoted + categoryText + '.';
+      case 'share_created':
+        return 'أُنشئ رابط قراءة فقط' + (expires ? ' صالح حتى ' + esc(expires) : '') + '.';
+      case 'share_revoked':
+        return metadata.reason === 'replaced'
+          ? 'أُلغي الرابط السابق تلقائياً عند إنشاء رابط جديد.'
+          : 'أُلغي رابط المشاركة يدوياً.';
+      case 'profile_updated':
+        return 'تم تحديث ' + (changedText ? esc(changedText) : 'معلومات الملف الشخصي') + '.';
+      case 'account_created':
+        return 'تم إنشاء الحساب وبدأ سجل النشاط.';
+      case 'login':
+        return 'تم تسجيل الدخول إلى حسابك.';
+      case 'password_changed':
+        return 'تم تغيير كلمة مرور الحساب.';
+      default:
+        return '';
+    }
+  }
+
+  function activityItemHtml(item) {
+    var meta = ACTIVITY_META[item.eventType] || { label: 'نشاط', icon: 'info', tone: 'info' };
+    var date = new Date(item.createdAt);
+    var iso = isNaN(date.getTime()) ? '' : date.toISOString();
+
+    return '<article class="activity-item" role="listitem">' +
+      '<span class="activity-item__icon activity-item__icon--' + meta.tone + '" aria-hidden="true">' + icon(meta.icon) + '</span>' +
+      '<div class="activity-item__body">' +
+        '<div class="activity-item__head">' +
+          '<strong>' + esc(meta.label) + '</strong>' +
+          '<time datetime="' + esc(iso) + '" title="' + esc(formatDateTime(item.createdAt)) + '">' + esc(timeAgo(item.createdAt)) + '</time>' +
+        '</div>' +
+        '<p class="activity-item__desc">' + activityDescription(item) + '</p>' +
+      '</div>' +
+    '</article>';
+  }
+
+  function activityListHtml(items) {
+    var groups = [];
+    var current = null;
+
+    items.forEach(function (item) {
+      var key = activityDayStart(item.createdAt);
+      if (!current || current.key !== key) {
+        current = { key: key, label: activityDayLabel(item.createdAt), items: [] };
+        groups.push(current);
+      }
+      current.items.push(item);
+    });
+
+    return groups.map(function (group) {
+      return '<div class="activity-day"><span>' + esc(group.label) + '</span></div>' +
+        group.items.map(activityItemHtml).join('');
+    }).join('');
+  }
+
+  function renderActivity() {
+    if (!els.activityList) return;
+
+    var activity = state.activity;
+    var items = activity.items;
+    var loading = activity.loading;
+    var error = activity.error;
+
+    els.activityCount.textContent = formatNumber(items.length) + (activity.done ? '' : '+');
+    els.activityList.setAttribute('aria-busy', loading ? 'true' : 'false');
+    els.activityLoading.hidden = !(loading && items.length === 0);
+    els.activityList.hidden = items.length === 0;
+    els.activityMoreWrap.hidden = !(items.length > 0 && !activity.done);
+    els.activityMoreBtn.disabled = loading;
+    setFormLoading(els.activityMoreBtn, loading);
+    setFormLoading(els.activityRefreshBtn, loading);
+    if (error) showAlert(els.activityError, error);
+    else hideAlert(els.activityError);
+
+    if (!items.length) {
+      els.activityList.innerHTML = '';
+      if (loading) {
+        els.activityEmpty.hidden = true;
+        return;
+      }
+      els.activityEmpty.hidden = false;
+      if (error) {
+        els.activityEmptyTitle.textContent = 'تعذّر تحميل سجل النشاط';
+        els.activityEmptyText.textContent = error;
+        els.activityRetryBtn.hidden = false;
+      } else {
+        els.activityEmptyTitle.textContent = 'لا يوجد نشاط بعد';
+        els.activityEmptyText.textContent = 'ستظهر هنا كل التحديثات المهمة: الملاحظات، المشاركة، الملف الشخصي، وتسجيل الدخول.';
+        els.activityRetryBtn.hidden = true;
+      }
+      return;
+    }
+
+    els.activityEmpty.hidden = true;
+    els.activityList.innerHTML = activityListHtml(items);
+  }
+
+  async function loadActivity(reset) {
+    if (!state.user || state.user.isDemo || state.activity.loading) return;
+
+    if (reset) {
+      state.activity.items = [];
+      state.activity.done = false;
+      state.activity.error = '';
+    } else if (state.activity.done) {
+      return;
+    }
+
+    state.activity.loading = true;
+    state.activity.stale = false;
+    renderActivity();
+
+    try {
+      var before = null;
+      if (!reset && state.activity.items.length) {
+        before = state.activity.items[state.activity.items.length - 1].createdAt;
+      }
+      var rows = await window.HNStore.listActivity(ACTIVITY_PAGE_SIZE, before);
+      state.activity.items = state.activity.items.concat(rows);
+      state.activity.done = rows.length < ACTIVITY_PAGE_SIZE;
+      state.activity.error = '';
+    } catch (error) {
+      state.activity.error = window.HNStore.errorMessage(error);
+    } finally {
+      state.activity.loading = false;
+      renderActivity();
+    }
+  }
+
+  function showActivityView() {
+    if (!state.user) return;
+    if (state.user.isDemo) {
+      toast('سجل النشاط غير متاح في الحساب التجريبي.', { type: 'info', duration: 3800 });
+      return;
+    }
+
+    closeNoteMenu();
+    closeSidebar();
+    setView('activity');
+    window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
+
+    if (state.activity.stale || (!state.activity.items.length && !state.activity.loading)) {
+      loadActivity(true);
+    } else {
+      renderActivity();
+    }
+  }
+
+  function showNotesView() {
+    setView('notes');
+    renderNav();
+    renderNotesSection();
+    window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
+  }
+
+  /* ---------- Sharing ---------- */
+  function buildShareUrl(token) {
+    var url = new URL('share.html', window.location.href);
+    url.hash = token;
+    return url.href;
+  }
+
+  function resetShareState() {
+    state.shareNoteId = null;
+    state.shareStatus = null;
+    state.shareToken = '';
+    state.shareLink = '';
+    state.shareLoading = false;
+    state.shareBusy = false;
+    if (els.shareAlert) hideAlert(els.shareAlert);
+  }
+
+  function renderSharePreview(note) {
+    if (!note || !els.shareNotePreview) return;
+    var category = getCategory(note.category);
+    var color = NOTE_COLORS.indexOf(note.color) !== -1 ? note.color : 'default';
+    var content = String(note.content || '').trim();
+
+    els.shareNotePreview.setAttribute('data-color', color);
+    els.shareNoteCategory.innerHTML = '<i style="background:' + category.color + '"></i><span>' + esc(category.name) + '</span>';
+    els.shareNoteTitle.textContent = note.title || 'بدون عنوان';
+    els.shareNoteExcerpt.textContent = content
+      ? content.slice(0, 180) + (content.length > 180 ? '…' : '')
+      : 'لا يوجد محتوى إضافي';
+  }
+
+  function renderShareState() {
+    if (!els.shareState || !els.shareActions) return;
+
+    var disabled = state.shareBusy ? ' disabled' : '';
+
+    if (state.shareLoading) {
+      els.shareState.innerHTML = '<div class="share-loading"><span class="spinner" aria-hidden="true"></span><p>جارٍ التحقق من حالة المشاركة…</p></div>';
+      els.shareActions.innerHTML = '<button class="btn btn--ghost" type="button" data-share-action="close">إغلاق</button>';
+      els.shareMeta.textContent = 'مشاركة آمنة للقراءة فقط';
+      return;
+    }
+
+    if (state.shareToken) {
+      var successExpires = state.shareStatus ? formatDateTime(state.shareStatus.expiresAt) : '';
+      els.shareState.innerHTML =
+        '<div class="share-success">' +
+          '<span class="share-success__icon" aria-hidden="true">' + icon('check') + '</span>' +
+          '<div><strong>تم إنشاء رابط المشاركة</strong><p>انسخ الرابط الآن؛ لن يظهر مرة أخرى بعد إغلاق هذه النافذة.</p></div>' +
+        '</div>' +
+        '<div class="share-link-field">' +
+          '<label for="shareLinkInput">رابط المشاركة</label>' +
+          '<div class="share-link-row">' +
+            '<input class="input share-link-input" id="shareLinkInput" type="text" readonly dir="ltr" value="' + esc(state.shareLink) + '">' +
+            '<button class="btn btn--primary btn--sm" type="button" data-share-action="copy"' + disabled + '>' + icon('copy') + '<span>نسخ</span></button>' +
+          '</div>' +
+        '</div>' +
+        (successExpires ? '<p class="share-expiry">' + icon('clock') + ' ينتهي في <strong>' + esc(successExpires) + '</strong></p>' : '') +
+        '<p class="share-hint">' + icon('shield') + ' أي شخص لديه الرابط يمكنه قراءة الملاحظة فقط، دون تعديلها أو رؤية بقية ملاحظاتك.</p>';
+      els.shareActions.innerHTML =
+        '<button class="btn btn--danger-ghost" type="button" data-share-action="revoke"' + disabled + '>إلغاء الرابط</button>' +
+        '<button class="btn btn--ghost" type="button" data-share-action="close">إغلاق</button>';
+      els.shareMeta.textContent = 'الرابط صالح لمدة 7 أيام';
+      return;
+    }
+
+    if (state.shareStatus && state.shareStatus.isActive) {
+      var activeExpires = formatDateTime(state.shareStatus.expiresAt);
+      els.shareState.innerHTML =
+        '<div class="share-status share-status--active">' +
+          '<span class="share-status__icon" aria-hidden="true">' + icon('link') + '</span>' +
+          '<div><strong>الرابط نشط</strong><p>ينتهي في ' + esc(activeExpires) + '.</p></div>' +
+        '</div>' +
+        '<div class="info-card info-card--warning">' +
+          '<span class="info-card__icon" aria-hidden="true">' + icon('shield') + '</span>' +
+          '<div><strong>الرابط محمي</strong><p>لأسباب أمنية لا يمكن عرض الرابط مرة أخرى بعد إغلاق النافذة. إنشاء رابط جديد يلغي الرابط الحالي فوراً.</p></div>' +
+        '</div>';
+      els.shareActions.innerHTML =
+        '<button class="btn btn--danger-ghost" type="button" data-share-action="revoke"' + disabled + '>إلغاء الرابط</button>' +
+        '<button class="btn btn--primary" type="button" data-share-action="create"' + disabled + '>إنشاء رابط جديد</button>' +
+        '<button class="btn btn--ghost" type="button" data-share-action="close">إغلاق</button>';
+      els.shareMeta.textContent = activeExpires ? 'ينتهي ' + activeExpires : 'الرابط نشط';
+      return;
+    }
+
+    var previous = state.shareStatus
+      ? 'انتهت صلاحية الرابط السابق أو تم إلغاؤه.'
+      : 'لم تشارك هذه الملاحظة بعد.';
+
+    els.shareState.innerHTML =
+      '<div class="share-status share-status--inactive">' +
+        '<span class="share-status__icon" aria-hidden="true">' + icon('link-off') + '</span>' +
+        '<div><strong>لا يوجد رابط نشط</strong><p>' + esc(previous) + '</p></div>' +
+      '</div>' +
+      '<div class="info-card">' +
+        '<span class="info-card__icon" aria-hidden="true">' + icon('info') + '</span>' +
+        '<div><strong>رابط للقراءة فقط</strong><p>يُظهر اسمك ومحتوى الملاحظة فقط، ويظل صالحاً لمدة 7 أيام. يمكنك إلغاؤه في أي وقت.</p></div>' +
+      '</div>';
+    els.shareActions.innerHTML =
+      '<button class="btn btn--primary" type="button" data-share-action="create"' + disabled + '>إنشاء رابط مشاركة</button>' +
+      '<button class="btn btn--ghost" type="button" data-share-action="close">إغلاق</button>';
+    els.shareMeta.textContent = 'صالح لمدة 7 أيام';
+  }
+
+  async function loadShareStatus() {
+    if (!state.shareNoteId) return;
+
+    state.shareLoading = true;
+    renderShareState();
+
+    try {
+      state.shareStatus = await window.HNStore.getShareStatus(state.shareNoteId);
+    } catch (error) {
+      state.shareStatus = null;
+      showAlert(els.shareAlert, window.HNStore.errorMessage(error));
+    } finally {
+      state.shareLoading = false;
+      renderShareState();
+    }
+  }
+
+  function openShareModal(noteId) {
+    if (!state.user) return;
+    if (state.user.isDemo) {
+      toast('المشاركة غير متاحة في الحساب التجريبي.', { type: 'info', duration: 3800 });
+      return;
+    }
+
+    var note = getNote(noteId);
+    if (!note) return;
+
+    closeNoteMenu();
+    state.shareNoteId = noteId;
+    state.shareStatus = null;
+    state.shareToken = '';
+    state.shareLink = '';
+    state.shareLoading = true;
+    state.shareBusy = false;
+    hideAlert(els.shareAlert);
+    renderSharePreview(note);
+    renderShareState();
+    openOverlay(els.shareOverlay);
+    loadShareStatus();
+  }
+
+  function closeShareModal() {
+    closeOverlay(els.shareOverlay);
+    resetShareState();
+  }
+
+  async function doCreateShare() {
+    if (state.shareBusy || !state.shareNoteId) return;
+
+    state.shareBusy = true;
+    hideAlert(els.shareAlert);
+    renderShareState();
+
+    try {
+      var result = await window.HNStore.createShare(state.shareNoteId);
+      state.shareToken = result.token;
+      state.shareLink = buildShareUrl(result.token);
+      state.shareStatus = {
+        id: result.shareId,
+        createdAt: Date.now(),
+        expiresAt: result.expiresAt,
+        isActive: true
+      };
+      invalidateActivity();
+      renderShareState();
+
+      setTimeout(function () {
+        var input = document.getElementById('shareLinkInput');
+        if (input) {
+          try {
+            input.focus({ preventScroll: true });
+            input.select();
+          } catch (error) {}
+        }
+      }, reducedMotion ? 0 : 90);
+    } catch (error) {
+      showAlert(els.shareAlert, window.HNStore.errorMessage(error));
+    } finally {
+      state.shareBusy = false;
+      renderShareState();
+    }
+  }
+
+  function createShareLink() {
+    if (state.shareBusy) return;
+
+    if (state.shareStatus && state.shareStatus.isActive) {
+      openConfirm({
+        title: 'إنشاء رابط مشاركة جديد؟',
+        message: 'سيتم إلغاء الرابط النشط الحالي فوراً، ولن يعمل بعد ذلك. هل تريد المتابعة؟',
+        confirmLabel: 'إنشاء رابط جديد',
+        onConfirm: doCreateShare
+      });
+      return;
+    }
+
+    doCreateShare();
+  }
+
+  function revokeShareLink() {
+    if (state.shareBusy) return;
+
+    var status = state.shareStatus;
+    if (!status || !status.id) return;
+
+    openConfirm({
+      title: 'إلغاء رابط المشاركة؟',
+      message: 'لن يعمل الرابط الحالي بعد الآن. يمكنك إنشاء رابط جديد لاحقاً.',
+      confirmLabel: 'إلغاء الرابط',
+      onConfirm: async function () {
+        state.shareBusy = true;
+        hideAlert(els.shareAlert);
+        renderShareState();
+
+        try {
+          await window.HNStore.revokeShare(status.id);
+          state.shareToken = '';
+          state.shareLink = '';
+          state.shareStatus = {
+            id: status.id,
+            createdAt: status.createdAt,
+            expiresAt: status.expiresAt,
+            isActive: false
+          };
+          invalidateActivity();
+          toast('تم إلغاء رابط المشاركة', { type: 'success', duration: 2800 });
+        } catch (error) {
+          showAlert(els.shareAlert, window.HNStore.errorMessage(error));
+        } finally {
+          state.shareBusy = false;
+          renderShareState();
+        }
+      }
+    });
+  }
+
+  function copyShareLink() {
+    var link = state.shareLink;
+    if (!link) return;
+
+    function success() {
+      toast('تم نسخ رابط المشاركة', { type: 'success', duration: 2600 });
+    }
+
+    function fallback() {
+      var input = document.getElementById('shareLinkInput');
+      if (!input) return;
+      input.focus();
+      input.select();
+      try {
+        if (document.execCommand('copy')) success();
+        else toast('تعذّر النسخ تلقائياً. حدّد الرابط وانسخه يدوياً.', { type: 'info', duration: 4200 });
+      } catch (error) {
+        toast('تعذّر النسخ تلقائياً. حدّد الرابط وانسخه يدوياً.', { type: 'info', duration: 4200 });
+      }
+    }
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(link).then(success, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  function handleShareAction(action) {
+    if (action === 'create') createShareLink();
+    else if (action === 'revoke') revokeShareLink();
+    else if (action === 'copy') copyShareLink();
+    else if (action === 'close') closeShareModal();
+  }
+
   /* ---------- Filters, layout & notes persistence ---------- */
   function persistPrefs() {
     if (!state.user) return;
@@ -1039,6 +1635,7 @@
     state.filter = { type: type, category: category || null };
     closeNoteMenu();
     closeSidebar();
+    setView('notes');
     renderNav();
     renderCategories();
     renderNotesSection();
@@ -1047,6 +1644,7 @@
   function focusSearch() {
     closeNoteMenu();
     if (isSidebarOpen()) closeSidebar();
+    setView('notes');
     if (window.innerWidth <= 720) {
       window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
     }
@@ -1086,6 +1684,7 @@
       return false;
     }
 
+    invalidateActivity();
     return true;
   }
 
@@ -1239,6 +1838,8 @@
     if (action === 'edit') {
       closeNoteMenu();
       openEditor(getNote(noteId));
+    } else if (action === 'share') {
+      openShareModal(noteId);
     } else if (action === 'pin') {
       toggleNoteFlag(noteId, 'pinned');
     } else if (action === 'favorite') {
@@ -1285,6 +1886,7 @@
     if (!state.user) return;
     closeNoteMenu();
     closeSidebar();
+    setView('notes');
 
     state.editingId = note ? note.id : null;
     var defaultCategory = state.filter.type === 'category' ? state.filter.category : 'general';
@@ -1549,10 +2151,12 @@
       });
       state.user = updated;
       renderUser();
+      updateGreeting();
       els.profileNamePreview.textContent = updated.name;
       els.profileEmailView.textContent = updated.email;
       els.memberSince.textContent = formatMemberSince(updated.createdAt);
       updateProfilePreview();
+      invalidateActivity();
       toast('تم تحديث معلومات الحساب', { type: 'success', duration: 2800 });
     } catch (error) {
       if (error && error.code === 'invalid-name') showFieldError(els.accountName, error.message);
@@ -1609,6 +2213,7 @@
       els.passwordForm.reset();
       updateStrength(els.newPasswordStrength, '');
       resetPasswordToggles(els.passwordForm);
+      invalidateActivity();
       toast('تم تحديث كلمة المرور بنجاح', { type: 'success', duration: 3000 });
     } catch (error) {
       if (error && error.code === 'wrong-password') {
@@ -1896,7 +2501,7 @@
       var user = await window.HNStore.signInDemo();
       await enterApp(user, {
         animate: true,
-        toast: 'مرحباً بك في الحساب التجريبي'
+        toast: 'مرحباً بك في الحساب التجريبي — المشاركة وسجل النشاط معطّلان، وملاحظاتك السبع جاهزة'
       });
     } catch (error) {
       showAlert(els.loginAlert, window.HNStore.errorMessage(error));
@@ -1952,6 +2557,7 @@
         else if (top === els.settingsOverlay) closeSettings();
         else if (top === els.confirmOverlay) cancelConfirm();
         else if (top === els.forgotOverlay) closeOverlay(els.forgotOverlay);
+        else if (top === els.shareOverlay) closeShareModal();
         return;
       }
 
@@ -2130,6 +2736,22 @@
       setFilter('category', button.getAttribute('data-category'));
     });
 
+    if (els.activityNavBtn) {
+      els.activityNavBtn.addEventListener('click', showActivityView);
+    }
+    if (els.activityBackBtn) {
+      els.activityBackBtn.addEventListener('click', showNotesView);
+    }
+    if (els.activityRefreshBtn) {
+      els.activityRefreshBtn.addEventListener('click', function () { loadActivity(true); });
+    }
+    if (els.activityRetryBtn) {
+      els.activityRetryBtn.addEventListener('click', function () { loadActivity(true); });
+    }
+    if (els.activityMoreBtn) {
+      els.activityMoreBtn.addEventListener('click', function () { loadActivity(false); });
+    }
+
     /* Topbar & notes toolbar */
     els.newNoteBtn.addEventListener('click', function () { openEditor(null); });
     els.newNoteTop.addEventListener('click', function () { openEditor(null); });
@@ -2145,6 +2767,7 @@
     els.searchInput.addEventListener('input', function () {
       state.query = els.searchInput.value;
       els.searchClear.hidden = !state.query;
+      setView('notes');
       clearTimeout(searchTimer);
       searchTimer = setTimeout(function () { renderNotesSection(); }, 120);
     });
@@ -2252,6 +2875,21 @@
         user: !!state.user
       });
     });
+
+    /* Share */
+    if (els.shareOverlay) {
+      els.shareOverlay.addEventListener('click', function (event) {
+        if (event.target === els.shareOverlay) closeShareModal();
+      });
+      $$('[data-close-share]').forEach(function (button) {
+        button.addEventListener('click', closeShareModal);
+      });
+      els.shareActions.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-share-action]');
+        if (!button) return;
+        handleShareAction(button.getAttribute('data-share-action'));
+      });
+    }
 
     /* Confirm & forgot */
     els.confirmCancel.addEventListener('click', cancelConfirm);

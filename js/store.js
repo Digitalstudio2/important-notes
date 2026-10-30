@@ -73,6 +73,18 @@
     if (code === '23514' || /violates check constraint/i.test(message)) {
       return makeError('invalid-data', 'بعض قيم الملاحظة غير صالحة. حدّث الصفحة وحاول مرة أخرى.');
     }
+    if (/demo account/i.test(message)) {
+      return makeError('demo-restricted', 'هذا حساب تجريبي مشترك، ولا يمكن استخدام هذه الميزة فيه.');
+    }
+    if (/note not found/i.test(message)) {
+      return makeError('not-found', 'الملاحظة غير موجودة أو لا تملك صلاحية الوصول إليها.');
+    }
+    if (/share not found/i.test(message)) {
+      return makeError('not-found', 'رابط المشاركة غير موجود أو تم إلغاؤه مسبقاً.');
+    }
+    if (/not authenticated/i.test(message)) {
+      return makeError('not-authenticated', 'يرجى تسجيل الدخول أولاً.');
+    }
     return makeError('db', 'تعذّر إتمام العملية على قاعدة البيانات. حاول مرة أخرى.');
   }
 
@@ -295,6 +307,43 @@
     };
   }
 
+  function mapShareStatus(row) {
+    if (!row) return null;
+    return {
+      id: row.id || '',
+      createdAt: parseDate(row.created_at),
+      expiresAt: parseDate(row.expires_at),
+      isActive: row.is_active === true
+    };
+  }
+
+  function mapSharedNote(row) {
+    if (!row) return null;
+    return {
+      title: row.title || '',
+      content: row.content || '',
+      category: validCategory(row.category),
+      color: validColor(row.color),
+      createdAt: parseDate(row.created_at),
+      updatedAt: parseDate(row.updated_at),
+      ownerName: row.owner_name || 'مستخدم',
+      ownerAvatarColor: AVATAR_COLORS.indexOf(row.owner_avatar_color) !== -1 ? row.owner_avatar_color : 'emerald',
+      expiresAt: parseDate(row.expires_at),
+      sharedAt: parseDate(row.shared_at)
+    };
+  }
+
+  function mapActivity(row) {
+    return {
+      id: Number(row.id) || 0,
+      eventType: row.event_type || '',
+      entityType: row.entity_type || '',
+      entityId: row.entity_id || '',
+      metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {},
+      createdAt: parseDate(row.created_at)
+    };
+  }
+
   function noteRow(note, userId) {
     var payload = notePayload(note);
     payload.id = note.id;
@@ -324,6 +373,15 @@
       }, { onConflict: 'id' })
       .select('*')
       .single();
+
+    if (error && (error.code === '23505' || /duplicate key/i.test(String(error.message || '')))) {
+      var { data: existing, error: readError } = await requireClient()
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .maybeSingle();
+      if (!readError && existing) return existing;
+    }
 
     if (error) throw dbError(error);
     return data;
@@ -419,7 +477,12 @@
     }
 
     var user = await fetchCurrentUser(data.user);
-    await ensureWelcomeNote(user);
+    if (user.isDemo) {
+      await prepareDemoSession(user);
+    } else {
+      await ensureWelcomeNote(user);
+      await recordAuthEvent('login');
+    }
     return user;
   }
 
@@ -487,6 +550,20 @@
     user.welcomeSeeded = true;
   }
 
+  async function prepareDemoSession(user) {
+    try {
+      await resetDemoNotes();
+    } catch (error) {
+      logError('demo-reset', error);
+      user.welcomeSeeded = false;
+      try {
+        await ensureDemoNotes(user);
+      } catch (seedError) {
+        logError('demo-seed', seedError);
+      }
+    }
+  }
+
   async function signInDemo() {
     var activeClient = requireClient();
 
@@ -509,7 +586,7 @@
     }
 
     var user = await fetchCurrentUser(data.user);
-    await ensureDemoNotes(user);
+    await prepareDemoSession(user);
     return user;
   }
 
@@ -584,6 +661,8 @@
 
     var { error } = await activeClient.auth.updateUser({ password: newPassword });
     if (error) throw authError(error);
+
+    await recordAuthEvent('password_changed');
 
     return true;
   }
@@ -830,6 +909,115 @@
     ];
   }
 
+  /* ---------- Sharing & activity ---------- */
+  function demoNotesPayload() {
+    return buildDemoNotes().map(function (note) {
+      return {
+        id: note.id,
+        title: note.title,
+        content: note.content,
+        category: note.category,
+        color: note.color,
+        pinned: note.pinned,
+        favorite: note.favorite,
+        created_at: new Date(note.createdAt).toISOString(),
+        updated_at: new Date(note.updatedAt).toISOString()
+      };
+    });
+  }
+
+  async function createShare(noteId) {
+    if (!currentUser) throw makeError('not-authenticated', 'يرجى تسجيل الدخول أولاً.');
+    assertNotDemo('مشاركة ملاحظاته');
+
+    var { data, error } = await requireClient().rpc('create_note_share', { p_note_id: noteId });
+    if (error) throw dbError(error);
+    if (!data || !data.token) {
+      throw makeError('share-failed', 'تعذّر إنشاء رابط المشاركة. حاول مرة أخرى.');
+    }
+
+    return {
+      shareId: data.share_id,
+      token: String(data.token),
+      expiresAt: parseDate(data.expires_at)
+    };
+  }
+
+  async function revokeShare(shareId) {
+    if (!currentUser) throw makeError('not-authenticated', 'يرجى تسجيل الدخول أولاً.');
+    assertNotDemo('إدارة روابط المشاركة');
+
+    var { data, error } = await requireClient().rpc('revoke_note_share', { p_share_id: shareId });
+    if (error) throw dbError(error);
+    return data === true;
+  }
+
+  async function getShareStatus(noteId) {
+    if (!currentUser) throw makeError('not-authenticated', 'يرجى تسجيل الدخول أولاً.');
+    assertNotDemo('إدارة روابط المشاركة');
+
+    var { data, error } = await requireClient().rpc('get_note_share_status', { p_note_id: noteId });
+    if (error) throw dbError(error);
+    return mapShareStatus(data);
+  }
+
+  async function getSharedNote(token) {
+    var clean = String(token || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(clean)) return null;
+
+    var { data, error } = await requireClient().rpc('get_shared_note', { p_token: clean });
+    if (error) throw dbError(error);
+    return mapSharedNote(data);
+  }
+
+  async function listActivity(limit, before) {
+    if (!currentUser) throw makeError('not-authenticated', 'يرجى تسجيل الدخول أولاً.');
+    assertNotDemo('عرض سجل النشاط');
+
+    var beforeIso = null;
+    if (before) {
+      var beforeTime = Number(before);
+      if (Number.isFinite(beforeTime) && beforeTime > 0) {
+        beforeIso = new Date(beforeTime).toISOString();
+      }
+    }
+
+    var { data, error } = await requireClient().rpc('list_activity', {
+      p_limit: Math.max(1, Math.min(100, Number(limit) || 30)),
+      p_before: beforeIso
+    });
+    if (error) throw dbError(error);
+    return (data || []).map(mapActivity);
+  }
+
+  async function resetDemoNotes() {
+    if (!currentUser) throw makeError('not-authenticated', 'يرجى تسجيل الدخول أولاً.');
+    if (!currentUser.isDemo) throw makeError('demo-restricted', 'هذه العملية متاحة للحساب التجريبي فقط.');
+
+    var { data, error } = await requireClient().rpc('reset_demo_notes', { p_notes: demoNotesPayload() });
+    if (error) throw dbError(error);
+
+    currentUser.welcomeSeeded = true;
+    return Number(data) || 0;
+  }
+
+  async function recordAuthEvent(eventType) {
+    if (!currentUser || currentUser.isDemo) return false;
+    if (eventType !== 'login' && eventType !== 'password_changed') return false;
+
+    try {
+      var { error } = await requireClient().rpc('record_auth_event', { p_event_type: eventType });
+      if (error) {
+        logError('activity', error);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      logError('activity', error);
+      return false;
+    }
+  }
+
   /* ---------- Data portability ---------- */
   function exportData(user, notes) {
     return {
@@ -956,6 +1144,14 @@
     makeNote: makeNote,
     makeWelcomeNote: makeWelcomeNote,
     savePrefs: savePrefs,
+
+    createShare: createShare,
+    revokeShare: revokeShare,
+    getShareStatus: getShareStatus,
+    getSharedNote: getSharedNote,
+    listActivity: listActivity,
+    resetDemoNotes: resetDemoNotes,
+    recordAuthEvent: recordAuthEvent,
 
     exportData: exportData,
     parseImport: parseImport,

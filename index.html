@@ -309,6 +309,10 @@
           <span class="nav-item__label">المفضلة</span>
           <span class="nav-item__count" id="countFavorites">0</span>
         </button>
+        <button class="nav-item" id="activityNavBtn" type="button" data-demo-hide>
+          <svg class="icon" aria-hidden="true"><use href="#i-clock"></use></svg>
+          <span class="nav-item__label">سجل النشاط</span>
+        </button>
       </nav>
 
       <div class="sidebar__section">
@@ -461,6 +465,58 @@
             <button class="btn btn--primary" id="emptyAction" type="button">
               <svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg>
               <span id="emptyActionLabel">أنشئ ملاحظتك الأولى</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="activity-section" id="activitySection" hidden aria-labelledby="activityTitle">
+          <header class="activity-head">
+            <div class="activity-head__copy">
+              <button class="link-btn activity-back" id="activityBackBtn" type="button">
+                <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"></use></svg>
+                <span>العودة إلى الملاحظات</span>
+              </button>
+              <div class="notes-head__title">
+                <h2 id="activityTitle">سجل النشاط</h2>
+                <span class="count-pill" id="activityCount">0</span>
+              </div>
+              <p class="activity-sub">كل تحديث مهم في حسابك، مرتب من الأحدث إلى الأقدم.</p>
+            </div>
+            <button class="btn btn--ghost btn--sm" id="activityRefreshBtn" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>
+              <span class="btn__label">تحديث</span>
+              <span class="spinner" aria-hidden="true"></span>
+            </button>
+          </header>
+
+          <div class="form-alert" id="activityError" role="alert" hidden></div>
+
+          <div class="activity-privacy">
+            <span class="activity-privacy__icon" aria-hidden="true"><svg class="icon"><use href="#i-shield"></use></svg></span>
+            <p><strong>سجل خاص بك وحدك.</strong> لا يحتوي محتوى الملاحظات، ولا يظهر لأي مستخدم آخر.</p>
+          </div>
+
+          <div class="activity-loading" id="activityLoading" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            <span>جارٍ تحميل سجل النشاط…</span>
+          </div>
+
+          <div class="activity-list" id="activityList" role="list" aria-live="polite" aria-busy="false"></div>
+
+          <div class="activity-empty" id="activityEmpty" hidden>
+            <span class="activity-empty__icon" aria-hidden="true"><svg class="icon"><use href="#i-clock"></use></svg></span>
+            <h3 id="activityEmptyTitle">لا يوجد نشاط بعد</h3>
+            <p id="activityEmptyText">ستظهر هنا كل التحديثات المهمة.</p>
+            <button class="btn btn--ghost btn--sm" id="activityRetryBtn" type="button" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>
+              <span>إعادة المحاولة</span>
+            </button>
+          </div>
+
+          <div class="activity-more-wrap" id="activityMoreWrap" hidden>
+            <button class="btn btn--ghost" id="activityMoreBtn" type="button">
+              <span class="btn__label">تحميل المزيد</span>
+              <span class="spinner" aria-hidden="true"></span>
             </button>
           </div>
         </section>
@@ -798,6 +854,34 @@
     </div>
   </div>
 
+  <!-- ============ SHARE ============ -->
+  <div class="overlay" id="shareOverlay" hidden>
+    <div class="modal modal--share" role="dialog" aria-modal="true" aria-labelledby="shareTitle" aria-describedby="shareSub">
+      <header class="modal__head">
+        <div>
+          <h2 id="shareTitle">مشاركة الملاحظة</h2>
+          <p class="modal__sub" id="shareSub">رابط سري للقراءة فقط، صالح لمدة 7 أيام.</p>
+        </div>
+        <button class="icon-btn modal__close" type="button" data-close-share aria-label="إغلاق">
+          <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+        </button>
+      </header>
+      <div class="modal__body share-body">
+        <div class="share-note" id="shareNotePreview" data-color="default">
+          <span class="note-chip" id="shareNoteCategory"><i></i><span>—</span></span>
+          <h3 id="shareNoteTitle">—</h3>
+          <p id="shareNoteExcerpt">—</p>
+        </div>
+        <div class="form-alert" id="shareAlert" role="alert" hidden></div>
+        <div class="share-state" id="shareState" aria-live="polite"></div>
+      </div>
+      <footer class="modal__foot">
+        <span class="modal__meta" id="shareMeta">مشاركة آمنة للقراءة فقط</span>
+        <div class="modal__actions" id="shareActions"></div>
+      </footer>
+    </div>
+  </div>
+
   <!-- ============ CONFIRM ============ -->
   <div class="overlay overlay--top" id="confirmOverlay" hidden>
     <div class="modal modal--confirm" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
@@ -837,6 +921,9 @@
   <div class="note-menu" id="noteMenu" role="menu" aria-label="خيارات الملاحظة" hidden>
     <button class="note-menu__item" data-note-action="edit" role="menuitem" type="button">
       <svg class="icon" aria-hidden="true"><use href="#i-pencil"></use></svg><span>تعديل</span>
+    </button>
+    <button class="note-menu__item" data-note-action="share" role="menuitem" type="button" data-demo-hide>
+      <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg><span>مشاركة</span>
     </button>
     <button class="note-menu__item" data-note-action="pin" role="menuitem" type="button">
       <svg class="icon" aria-hidden="true"><use href="#i-pin"></use></svg><span>تثبيت</span>
@@ -901,6 +988,11 @@
     <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8Z"/></symbol>
     <symbol id="i-tag" viewBox="0 0 24 24"><path d="m20.6 13.4-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></symbol>
+    <symbol id="i-link-off" viewBox="0 0 24 24"><path d="m3 3 18 18"/><path d="M10.6 13.4a5 5 0 0 0 6.9-.4l2-2a5 5 0 0 0-7-7l-1.1 1.1"/><path d="M13.4 10.6a5 5 0 0 0-6.9.4l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></symbol>
+    <symbol id="i-login" viewBox="0 0 24 24"><path d="M14 8V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-2"/><path d="M9 12h12"/><path d="m18 9 3 3-3 3"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></symbol>
   </svg>
 
   <!-- Supabase JS (browser UMD build) + public client configuration -->
