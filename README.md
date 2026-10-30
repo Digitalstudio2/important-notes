@@ -290,10 +290,14 @@ important-notes/
 │   ├── store.js               # طبقة Supabase: Auth، الملف الشخصي، الملاحظات، التفضيلات
 │   └── app.js                 # منطق الواجهة والأحداث والعرض
 ├── supabase/
-│   └── schema.sql             # الجداول + الفهارس + Triggers + RLS + دالة حذف الحساب
+│   ├── schema.sql             # الجداول + الفهارس + Triggers + RLS + دالة حذف الحساب
+│   ├── migrations/
+│   │   └── 001_harden_privileges.sql   # المرحلة 0: تحصين الصلاحيات
+│   └── verify_hardening.sql   # فحص للقراءة فقط بعد التحصين
 ├── docs/
 │   ├── preview-desktop.png
-│   └── preview-mobile.png
+│   ├── preview-mobile.png
+│   └── phase0-report.md       # تقرير النسخ الاحتياطي والاستعادة والتحصين
 ├── .gitignore                 # يمنع رفع ملفات الأسرار
 ├── .nojekyll                  # مطلوب لـ GitHub Pages
 └── README.md
@@ -387,6 +391,31 @@ select public.delete_own_account();
 - التحقق من المدخلات وتنظيف المحتوى قبل عرضه يقللان من مخاطر الحقن.
 - حذف الحساب يتم عبر دالة محدودة الصلاحية لا تحذف إلا حساب المستدعي.
 
+### تحصين الصلاحيات (المرحلة 0)
+
+طُبِّق الملف `supabase/migrations/001_harden_privileges.sql` بعد أخذ نسخة احتياطية والتحقق من استعادتها. التغييرات:
+
+- `anon`: لا يملك أي صلاحية على جداول أو تسلسلات أو دوال `public`.
+- `authenticated`: قراءة/إضافة/تعديل/حذف على `notes`، وقراءة/إضافة/تعديل فقط على `profiles` (لا حذف مباشر).
+- `delete_own_account()`: الدالة الوحيدة القابلة للاستدعاء عبر RPC من `authenticated`.
+- دوال المشغّلات (`handle_new_user`, `protect_demo_account`, `set_updated_at`): غير قابلة للاستدعاء المباشر من عملاء API.
+- الكائنات المستقبلية التي ينشئها `postgres` في `public`: deny-by-default لـ`anon`/`authenticated`، بما في ذلك عدم منح `EXECUTE` لـ`PUBLIC` على الدوال.
+- `USAGE` على مخطط `public` فقط، دون `CREATE`.
+
+النتائج الكاملة والاختبارات والبصمات في [`docs/phase0-report.md`](docs/phase0-report.md).
+
+للتطبيق والفحص:
+
+```powershell
+psql "$env:SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/001_harden_privileges.sql
+psql "$env:SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/verify_hardening.sql
+```
+
+> **مخاطرة متبقية:** الامتيازات الافتراضية لدور `supabase_admin` ما زالت تمنح `anon`/`authenticated` صلاحيات كاملة على الكائنات التي ينشئها هو في `public`. لا يملك `postgres` صلاحية تعديلها (ليس عضواً في `supabase_admin` وليس superuser). لذلك:
+> - أنشئ الجداول والدوال عبر ملفات migration تُنفَّذ بدور `postgres`، لا من محرر لوحة التحكم إن كان ينفّذ بدور `supabase_admin`.
+> - أو طبّق نفس أوامر `ALTER DEFAULT PRIVILEGES` عبر اتصال يملك دور `supabase_admin`.
+> - أي كائن جديد يجب أن يفعّل RLS صراحةً قبل منح أي صلاحية.
+
 ### حدود يجب معرفتها
 
 > **مهم:** الحماية تعتمد على إعداد RLS بشكل صحيح. لا تنشر التطبيق قبل تشغيل `supabase/schema.sql` والتحقق من السياسات.
@@ -442,6 +471,30 @@ select public.delete_own_account();
 - يفشل بوضوح إذا كان الملف غير صالح أو لا يحتوي على ملاحظات قابلة للاستيراد.
 
 > الاستيراد **يضيف** الملاحظات إلى الحساب الحالي ولا يحذف الملاحظات الموجودة.
+
+### نسخ قاعدة البيانات (pg_dump)
+
+تصدير التطبيق (JSON) لا يغطي حسابات `auth.users` ولا كل إعدادات الملفات الشخصية. قبل أي تغيير على المخطط:
+
+```powershell
+pg_dump "$env:SUPABASE_DB_URL" --format=custom --file=full.dump
+pg_dump "$env:SUPABASE_DB_URL" --schema=public --schema-only --file=public_schema.sql
+pg_dump "$env:SUPABASE_DB_URL" --schema=public --data-only --file=public_data.sql
+pg_dump "$env:SUPABASE_DB_URL" --schema=auth --data-only --file=auth_data.sql
+Get-FileHash .\full.dump, .\public_schema.sql, .\public_data.sql, .\auth_data.sql -Algorithm SHA256
+```
+
+- احتفظ بالبصمات (SHA256) للتحقق من سلامة النسخة.
+- تحقق من الاستعادة في قاعدة معزولة (PGlite أو staging) قبل الاعتماد على النسخة.
+- لا ترفع النسخ إلى GitHub؛ فهي تحتوي بيانات مستخدمين وبصمات كلمات مرور. خزّنها مشفّرة وبصلاحيات محدودة.
+
+نسخة المرحلة 0 محفوظة خارج المستودع في:
+
+```text
+%USERPROFILE%\Documents\important-notes-backups\2026-10-30_phase0
+```
+
+وتم التحقق من استعادتها في PGlite: 2 ملفات شخصية، 8 ملاحظات، 2 مستخدمي Auth، 2 هويات، و7 سياسات RLS. كما تم اختبار العزل بين الحسابين ومنع `anon` قبل التحصين وبعده.
 
 ---
 
@@ -543,6 +596,11 @@ alter table public.notes add constraint notes_category_check
 - [ ] عزل الحسابات: حساب جديد لا يرى ملاحظات الحساب التجريبي.
 - [ ] حذف الحساب نهائياً والتأكد من اختفاء صفوفه من الجداول.
 - [ ] رفض الوصول المباشر إلى `/rest/v1/notes` بدون JWT صحيح.
+- [ ] `anon` لا يستطيع قراءة `notes` أو `profiles` ولا تنفيذ أي دالة في `public`.
+- [ ] `authenticated` لا يستطيع حذف `profiles` مباشرة ولا تنفيذ دوال المشغّلات.
+- [ ] `delete_own_account()` تعمل لصاحب الحساب وترفض الحساب التجريبي.
+- [ ] الكائنات الجديدة التي ينشئها `postgres` في `public` deny-by-default.
+- [ ] تشغيل `supabase/verify_hardening.sql` وإرفاق النتيجة بعد أي تغيير على الصلاحيات.
 
 ---
 
