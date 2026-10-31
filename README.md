@@ -369,7 +369,8 @@ important-notes/
 │   ├── preview-mobile.png
 │   ├── phase0-report.md       # تقرير النسخ الاحتياطي والاستعادة والتحصين
 │   ├── phase1-report.md       # تقرير المشاركة وسجل النشاط والاختبارات
-│   └── phase2-report.md       # تقرير التسجيل المفتوح واستعادة كلمة المرور
+│   ├── phase2-report.md       # تقرير التسجيل المفتوح واستعادة كلمة المرور
+│   └── phase3-report.md       # تقرير إصلاح نسخ رابط المشاركة وفتحه
 ├── .gitignore                 # يمنع رفع ملفات الأسرار
 ├── .nojekyll                  # مطلوب لـ GitHub Pages
 └── README.md
