@@ -1595,22 +1595,32 @@
 
   function copyShareLink() {
     var link = state.shareLink;
-    if (!link) return;
+    if (!link) {
+      toast('تعذّر نسخ الرابط. أعد إنشاء رابط المشاركة وحاول مرة أخرى.', { type: 'error', duration: 4200 });
+      return;
+    }
 
     function success() {
       toast('تم نسخ رابط المشاركة', { type: 'success', duration: 2600 });
     }
 
+    function failure() {
+      toast('تعذّر النسخ تلقائياً. حدّد الرابط وانسخه يدوياً.', { type: 'info', duration: 4200 });
+    }
+
     function fallback() {
       var input = document.getElementById('shareLinkInput');
-      if (!input) return;
+      if (!input) {
+        failure();
+        return;
+      }
       input.focus();
       input.select();
       try {
         if (document.execCommand('copy')) success();
-        else toast('تعذّر النسخ تلقائياً. حدّد الرابط وانسخه يدوياً.', { type: 'info', duration: 4200 });
+        else failure();
       } catch (error) {
-        toast('تعذّر النسخ تلقائياً. حدّد الرابط وانسخه يدوياً.', { type: 'info', duration: 4200 });
+        failure();
       }
     }
 
@@ -2932,15 +2942,19 @@
     /* Share */
     if (els.shareOverlay) {
       els.shareOverlay.addEventListener('click', function (event) {
-        if (event.target === els.shareOverlay) closeShareModal();
-      });
-      $$('[data-close-share]').forEach(function (button) {
-        button.addEventListener('click', closeShareModal);
-      });
-      els.shareActions.addEventListener('click', function (event) {
+        if (event.target === els.shareOverlay) {
+          closeShareModal();
+          return;
+        }
+
+        // Actions can live in #shareActions or inside #shareState (the copy
+        // button next to the generated link), so delegate from the overlay.
         var button = event.target.closest('[data-share-action]');
         if (!button) return;
         handleShareAction(button.getAttribute('data-share-action'));
+      });
+      $$('[data-close-share]').forEach(function (button) {
+        button.addEventListener('click', closeShareModal);
       });
     }
 
